@@ -52,10 +52,20 @@
     <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></symbol>
     <symbol id="i-logout" viewBox="0 0 24 24"><path d="M10 4H5v16h5M15 8l4 4-4 4M19 12H9"/></symbol>
     <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 3L5 13h6l-1 8 8-10h-6z"/></symbol>
+
+    <symbol id="i-steps" viewBox="0 0 24 24"><path d="M5 6h6M5 12h10M5 18h14"/><circle cx="17" cy="6" r="2"/><circle cx="19" cy="12" r="2"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5zM3 13l9 5 9-5M3 17.5l9 5 9-5" transform="scale(1) translate(0 -1)"/></symbol>
+    <symbol id="i-chats" viewBox="0 0 24 24"><path d="M4 5h12a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H9l-4 3v-3H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM20 9v8a2 2 0 0 1-2 2h-1"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M6 14v6"/></symbol>
+    <symbol id="i-library" viewBox="0 0 24 24"><path d="M4 20V5h4v15M8 20V5h4v15M14 6l4-1 3 14-4 1z"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 .9-1 1.7M12 17h.01"/></symbol>
+    <symbol id="i-send-mail" viewBox="0 0 24 24"><path d="M3 11l18-8-8 18-2-8z"/></symbol>
+    <symbol id="i-chevd" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+    <symbol id="i-brain" viewBox="0 0 24 24"><path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 6 1V5a2 2 0 0 0-3-1zM15 4a3 3 0 0 1 3 3 3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-6 1"/></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5H5V6h5"/></symbol>
   </defs>
 </svg>
-
-<div id="app" class="app" data-theme="light" data-side="open" data-art="closed" hidden>
+<div id="app" class="app" data-theme="light" data-side="open" data-art="closed" data-view="chat" hidden>
   <header class="bar">
     <button class="icon-btn onbar" id="side-toggle" type="button" aria-label="Afficher ou masquer le panneau"><svg class="ic"><use href="#i-menu"/></svg></button>
     <a class="brand" href="/ScoutHub/" title="Retour à ScoutHub"><img class="logo" src="assets/ChatGDB.png" alt="" width="30" height="30"><b>ChatGDB</b><span class="brand-sub">Assistant de la fédération</span></a>
@@ -63,52 +73,78 @@
       <span class="soon" id="soon" hidden>Bientôt disponible</span>
       <a class="bar-link" href="/ScoutHub/">ScoutHub</a>
       <button class="icon-btn onbar" id="theme" type="button" aria-label="Changer de thème"><svg class="ic"><use href="#i-moon"/></svg></button>
-      <button class="avatar-btn" id="menu-open" type="button" aria-haspopup="true" aria-label="Menu du compte"><span class="avatar" id="me-avatar"></span></button>
     </div>
   </header>
 
-  <aside class="side" id="side" aria-label="Conversations">
-    <button class="new" id="new" type="button"><svg class="ic"><use href="#i-plus"/></svg><span>Nouvelle conversation</span><kbd>Ctrl K</kbd></button>
-    <label class="searchbox"><svg class="ic"><use href="#i-search"/></svg><input id="q" type="search" placeholder="Rechercher une conversation" autocomplete="off"></label>
-    <nav class="convs" id="convs" aria-label="Historique"></nav>
+  <aside class="side" id="side" aria-label="Navigation">
+    <nav class="snav">
+      <button class="snav-btn primary" id="new" type="button"><svg class="ic"><use href="#i-plus"/></svg><span>Nouvelle conversation</span><kbd>Ctrl K</kbd></button>
+      <button class="snav-btn" id="nav-search" type="button"><svg class="ic"><use href="#i-search"/></svg><span>Rechercher</span><kbd>Ctrl /</kbd></button>
+      <button class="snav-btn" id="nav-artifacts" type="button"><svg class="ic"><use href="#i-layers"/></svg><span>Artefacts</span></button>
+      <button class="snav-btn" id="nav-chats" type="button"><svg class="ic"><use href="#i-chats"/></svg><span>Toutes les conversations</span></button>
+    </nav>
+    <div class="side-title"><span>Récentes</span></div>
+    <nav class="convs" id="convs" aria-label="Conversations récentes"></nav>
     <div class="side-bottom">
-      <button class="credits-mini" id="credits-open" type="button" aria-label="Voir mes crédits">
+      <button class="credits-mini" id="credits-open" type="button" aria-label="Voir ma consommation et mes crédits">
         <span class="cm-row"><span><svg class="ic sm"><use href="#i-bolt"/></svg> Crédits</span><b id="cm-txt"></b></span>
         <span class="bar-meter"><i id="cm-bar"></i></span>
+      </button>
+      <button class="acct" id="acct" type="button" aria-haspopup="true" aria-label="Compte et paramètres">
+        <span class="avatar" id="me-avatar"></span>
+        <span class="acct-text"><b id="me-name"></b><small id="me-role"></small></span>
+        <svg class="ic sm"><use href="#i-sliders"/></svg>
       </button>
     </div>
   </aside>
 
   <main class="main" id="main">
-    <div class="title-row"><h1 id="title">Nouvelle conversation</h1><span class="badge" id="badge" hidden>Exemple</span>
-      <div class="title-actions">
-        <button class="icon-btn" id="pin" type="button" title="Épingler" aria-label="Épingler la conversation"><svg class="ic"><use href="#i-pin"/></svg></button>
-        <button class="icon-btn" id="export" type="button" title="Exporter" aria-label="Exporter la conversation"><svg class="ic"><use href="#i-share"/></svg></button>
-      </div>
-    </div>
-    <section class="thread" id="thread" aria-live="polite" tabindex="-1"></section>
-    <footer class="composer-wrap">
-      <div class="notice" id="notice" role="status" hidden></div>
-      <div class="drop-hint" id="drop-hint" hidden>Déposez vos images ou documents ici</div>
-      <form class="composer" id="form" autocomplete="off">
-        <div class="atts" id="atts" hidden></div>
-        <textarea id="input" rows="1" placeholder="Posez votre question, joignez une image ou un document…" maxlength="8000" aria-label="Votre message"></textarea>
-        <div class="comp-bar">
-          <div class="comp-left">
-            <button class="chip icon" id="attach" type="button" title="Joindre une image ou un document" aria-label="Joindre un fichier"><svg class="ic"><use href="#i-clip"/></svg></button>
-            <input id="file" type="file" hidden multiple accept="image/*,.pdf,.txt,.md,.csv,.json,.html,.xml,.svg">
-            <button class="chip toggle" id="web" type="button" aria-pressed="true" title="Autoriser la recherche sur le web"><svg class="ic"><use href="#i-globe"/></svg><span>Recherche web</span></button>
-            <select id="mode" class="chip select" aria-label="Style de réponse"><option value="concise">Réponse courte</option><option value="detail">Réponse détaillée</option></select>
-          </div>
-          <div class="comp-right">
-            <span class="count" id="count" aria-hidden="true"></span>
-            <button class="chip icon" id="mic" type="button" title="Dicter" aria-label="Dicter votre message" hidden><svg class="ic"><use href="#i-mic"/></svg></button>
-            <button class="send" id="send" type="submit" aria-label="Envoyer"><svg class="ic"><use href="#i-send"/></svg></button>
-          </div>
+    <!-- conversation -->
+    <section class="view" id="view-chat">
+      <div class="title-row"><h1 id="title">Nouvelle conversation</h1><span class="badge" id="badge" hidden>Exemple</span>
+        <div class="title-actions">
+          <button class="icon-btn" id="pin" type="button" title="Épingler" aria-label="Épingler la conversation"><svg class="ic"><use href="#i-pin"/></svg></button>
+          <button class="icon-btn" id="export" type="button" title="Exporter" aria-label="Exporter la conversation"><svg class="ic"><use href="#i-share"/></svg></button>
         </div>
-      </form>
-      <p class="disclaimer">ChatGDB peut se tromper : vérifiez les informations importantes auprès de votre responsable.</p>
-    </footer>
+      </div>
+      <section class="thread" id="thread" aria-live="polite" tabindex="-1"></section>
+      <footer class="composer-wrap">
+        <div class="notice" id="notice" role="status" hidden></div>
+        <div class="drop-hint" id="drop-hint" hidden>Déposez vos images ou documents ici</div>
+        <form class="composer" id="form" autocomplete="off">
+          <div class="atts" id="atts" hidden></div>
+          <textarea id="input" rows="1" placeholder="Posez votre question, joignez une image ou un document…" maxlength="8000" aria-label="Votre message"></textarea>
+          <div class="comp-bar">
+            <div class="comp-left">
+              <button class="chip icon" id="attach" type="button" title="Joindre une image ou un document" aria-label="Joindre un fichier"><svg class="ic"><use href="#i-clip"/></svg></button>
+              <input id="file" type="file" hidden multiple accept="image/*,.pdf,.txt,.md,.csv,.json,.html,.xml,.svg">
+              <button class="chip toggle" id="web" type="button" aria-pressed="true" title="Autoriser la recherche sur le web"><svg class="ic"><use href="#i-globe"/></svg><span>Recherche web</span></button>
+            </div>
+            <div class="comp-right">
+              <span class="count" id="count" aria-hidden="true"></span>
+              <button class="chip model" id="model-chip" type="button" aria-haspopup="true" aria-expanded="false" title="Modèle, réflexion et recherche"><svg class="ic"><use href="#i-sliders"/></svg><span id="model-label">Haiku 5.5</span><svg class="ic sm"><use href="#i-chevd"/></svg></button>
+              <button class="chip icon" id="mic" type="button" title="Dicter" aria-label="Dicter votre message" hidden><svg class="ic"><use href="#i-mic"/></svg></button>
+              <button class="send" id="send" type="submit" aria-label="Envoyer"><svg class="ic"><use href="#i-send"/></svg></button>
+            </div>
+          </div>
+        </form>
+        <p class="disclaimer">ChatGDB peut se tromper : vérifiez les informations importantes auprès de votre responsable.</p>
+      </footer>
+    </section>
+
+    <!-- artefacts -->
+    <section class="view page" id="view-artifacts" hidden>
+      <div class="page-head"><h1>Artefacts</h1><label class="searchbox inline"><svg class="ic"><use href="#i-search"/></svg><input id="art-q" type="search" placeholder="Rechercher un artefact" autocomplete="off"></label></div>
+      <p class="muted">Tout ce que ChatGDB a créé pour vous, regroupé par conversation.</p>
+      <div id="art-list"></div>
+    </section>
+
+    <!-- toutes les conversations -->
+    <section class="view page" id="view-chats" hidden>
+      <div class="page-head"><h1>Conversations</h1><label class="searchbox inline"><svg class="ic"><use href="#i-search"/></svg><input id="q" type="search" placeholder="Rechercher dans vos conversations" autocomplete="off"></label></div>
+      <p class="muted" id="chats-count"></p>
+      <div id="chat-list"></div>
+    </section>
   </main>
 
   <aside class="art" id="art" aria-label="Artefact" hidden>
@@ -117,6 +153,7 @@
       <div class="art-title"><b id="art-name"></b><small id="art-kind"></small></div>
       <select id="art-ver" class="chip select" aria-label="Version" hidden></select>
       <div class="seg" role="tablist"><button id="tab-prev" role="tab" type="button" aria-selected="true">Aperçu</button><button id="tab-code" role="tab" type="button" aria-selected="false">Code</button></div>
+      <button class="icon-btn" id="art-lib" type="button" title="Enregistrer dans la bibliothèque" aria-label="Enregistrer dans la bibliothèque" hidden><svg class="ic"><use href="#i-library"/></svg></button>
       <button class="icon-btn" id="art-copy" type="button" title="Copier" aria-label="Copier"><svg class="ic"><use href="#i-copy"/></svg></button>
       <button class="icon-btn" id="art-dl" type="button" title="Télécharger" aria-label="Télécharger"><svg class="ic"><use href="#i-download"/></svg></button>
       <button class="icon-btn" id="art-full" type="button" title="Plein écran" aria-label="Plein écran"><svg class="ic"><use href="#i-expand"/></svg></button>
@@ -126,66 +163,113 @@
   </aside>
   <div class="scrim" id="scrim" hidden></div>
 
+  <!-- sélecteur de modèle (dans la zone de saisie) -->
+  <div class="pop" id="model-pop" role="dialog" aria-label="Modèle et réglages" hidden>
+    <p class="pop-h">Modèle</p>
+    <div class="opts" id="pop-model"></div>
+    <p class="pop-h">Réflexion</p>
+    <div class="opts row" id="pop-effort"></div>
+    <p class="pop-h">Recherche web</p>
+    <div class="opts row" id="pop-depth"></div>
+    <p class="pop-h">Réponses</p>
+    <div class="opts row" id="pop-style"></div>
+    <p class="pop-cost" id="pop-cost"></p>
+    <button class="pop-link" id="pop-settings" type="button">Tous les réglages…</button>
+  </div>
+
+  <!-- menu du compte -->
   <div class="menu" id="menu" role="menu" hidden>
-    <div class="menu-who"><b id="me-name"></b><small id="me-role"></small></div>
-    <button role="menuitem" id="m-settings" type="button"><svg class="ic sm"><use href="#i-gear"/></svg> Préférences</button>
-    <button role="menuitem" id="m-credits" type="button"><svg class="ic sm"><use href="#i-bolt"/></svg> Mes crédits</button>
-    <button role="menuitem" id="m-memory" type="button" hidden><svg class="ic sm"><use href="#i-book"/></svg> Mémoire de ChatGDB</button>
-    <button role="menuitem" id="m-conso" type="button" hidden><svg class="ic sm"><use href="#i-chart"/></svg> Consommation</button>
-    <a role="menuitem" href="/ScoutHub/compte.html"><svg class="ic sm"><use href="#i-user"/></svg> Mon compte</a>
+    <div class="menu-who"><b id="menu-name"></b><small id="menu-mail"></small></div>
+    <button role="menuitem" id="m-settings" type="button"><svg class="ic sm"><use href="#i-gear"/></svg> Paramètres</button>
+    <button role="menuitem" id="m-usage" type="button"><svg class="ic sm"><use href="#i-chart"/></svg> Utilisation et crédits</button>
+    <a role="menuitem" href="/ScoutHub/aide.html"><svg class="ic sm"><use href="#i-help"/></svg> Aide</a>
+    <a role="menuitem" href="/ScoutHub/compte.html"><svg class="ic sm"><use href="#i-user"/></svg> Mon compte ScoutHub</a>
     <a role="menuitem" href="/ScoutHub/"><svg class="ic sm"><use href="#i-home"/></svg> Retour à ScoutHub</a>
     <button role="menuitem" id="m-out" type="button"><svg class="ic sm"><use href="#i-logout"/></svg> Déconnexion</button>
   </div>
 
-  <dialog id="dlg-credits">
-    <h2>Mes crédits</h2>
-    <p class="muted">Un crédit correspond à peu près à une question courte (une recherche web compte double). Deux limites s’appliquent : une par session de <b id="d-hours">5</b> heures et une par semaine.</p>
-    <div class="meter"><div class="meter-top"><span>Session de <b id="d-hours2">5</b> h</span><span id="d-win-txt"></span></div><div class="bar-meter big"><i id="d-win"></i></div><small id="d-win-reset"></small></div>
-    <div class="meter"><div class="meter-top"><span>Cette semaine</span><span id="d-week-txt"></span></div><div class="bar-meter big"><i id="d-week"></i></div><small id="d-week-reset"></small></div>
-    <h3>Gagner des crédits</h3>
-    <p class="muted" id="d-earn"></p>
-    <div class="dlg-actions"><button class="btn" type="button" disabled>Augmenter mon quota (bientôt)</button><button class="btn primary" type="button" data-close>Fermer</button></div>
-  </dialog>
+  <!-- recherche -->
+  <dialog id="dlg-search" class="dlg-search"><label class="searchbox big"><svg class="ic"><use href="#i-search"/></svg><input id="sq" type="search" placeholder="Rechercher une conversation, un message ou un artefact…" autocomplete="off"></label><div id="sres" class="sres"></div></dialog>
 
-  <dialog id="dlg-memory" class="wide">
-    <h2>Mémoire de ChatGDB</h2>
-    <p class="muted">Ce que vous apprenez à ChatGDB. Les notes sont enregistrées dans GitHub (dépôt privé) et ne sont pas envoyées avec chaque question : l’IA en voit seulement le sommaire et va lire celles qui concernent la question.</p>
-    <p class="status" id="mem-status" role="status"></p>
-    <div class="mem">
-      <div class="mem-list"><button class="btn small" id="mem-new" type="button"><svg class="ic sm"><use href="#i-plus"/></svg> Nouvelle note</button><ul id="mem-items"></ul></div>
-      <form class="mem-form" id="mem-form" autocomplete="off">
-        <label class="field">Titre<input id="mem-titre" type="text" maxlength="120" required></label>
-        <label class="field">Mots-clés <small>(séparés par des virgules)</small><input id="mem-mots" type="text" maxlength="200"></label>
-        <label class="field">Contenu <small>(Markdown)</small><textarea id="mem-contenu" rows="9" maxlength="20000" required></textarea></label>
-        <div class="dlg-actions"><button class="btn danger" id="mem-del" type="button" hidden>Supprimer</button><button class="btn" type="button" data-close>Fermer</button><button class="btn primary" type="submit">Enregistrer</button></div>
-      </form>
+  <!-- paramètres (comme dans Claude : onglets à gauche) -->
+  <dialog id="dlg-settings" class="dlg-settings">
+    <div class="set-wrap">
+      <nav class="set-nav" id="set-nav" aria-label="Rubriques des paramètres">
+        <h2>Paramètres</h2>
+        <button data-t="general" class="on" type="button"><svg class="ic sm"><use href="#i-user"/></svg>Général</button>
+        <button data-t="modele" type="button"><svg class="ic sm"><use href="#i-sliders"/></svg>Modèle et recherche</button>
+        <button data-t="usage" type="button"><svg class="ic sm"><use href="#i-chart"/></svg>Utilisation et crédits</button>
+        <button data-t="memoire" type="button" id="set-nav-mem" hidden><svg class="ic sm"><use href="#i-brain"/></svg>Mémoire et compétences</button>
+        <button data-t="donnees" type="button"><svg class="ic sm"><use href="#i-trash"/></svg>Données</button>
+      </nav>
+      <div class="set-body">
+        <button class="icon-btn set-close" type="button" data-close aria-label="Fermer"><svg class="ic"><use href="#i-close"/></svg></button>
+        <section data-p="general">
+          <h3>Général</h3>
+          <label class="field">Thème<select id="set-theme"><option value="light">Clair</option><option value="dark">Sombre</option></select></label>
+          <label class="field">Instructions personnalisées <small>(facultatif, 600 caractères)</small><textarea id="set-custom" rows="5" maxlength="600" placeholder="Ex. : Je suis chef d’unité louveteaux, réponds simplement et propose des idées d’activités."></textarea></label>
+          <p class="muted">ChatGDB tient compte de ces instructions dans toutes vos conversations.</p>
+        </section>
+        <section data-p="modele" hidden>
+          <h3>Modèle et recherche</h3>
+          <label class="field">Modèle d’IA<select id="set-model"><option value="claude-haiku-5-5">Haiku 5.5 : rapide, économe en crédits</option><option value="claude-sonnet-5-5">Sonnet 5.5 : plus fin, environ 20 fois plus de crédits</option></select></label>
+          <label class="field">Niveau de réflexion<select id="set-effort"><option value="low">Faible : réponses vives</option><option value="medium">Moyenne</option><option value="high">Élevée : raisonnement approfondi (plus lent, plus de crédits)</option></select></label>
+          <label class="field">Profondeur de la recherche web<select id="set-depth"><option value="standard">Standard : quelques recherches ciblées</option><option value="approfondie">Approfondie : nombreuses recherches, pages lues en entier, recoupement des sources (lent, beaucoup de crédits)</option></select></label>
+          <label class="check"><input type="checkbox" id="set-web"> Recherche web activée par défaut</label>
+          <label class="field">Style des réponses<select id="set-style"><option value="concise">Courtes</option><option value="detail">Détaillées</option></select></label>
+          <p class="muted" id="set-cost"></p>
+        </section>
+        <section data-p="usage" hidden>
+          <h3>Utilisation et crédits</h3>
+          <div class="meter"><div class="meter-top"><span>Session de <b id="d-hours">5</b> h</span><span id="d-win-txt"></span></div><div class="bar-meter big"><i id="d-win"></i></div><small id="d-win-reset"></small></div>
+          <div class="meter"><div class="meter-top"><span>Cette semaine</span><span id="d-week-txt"></span></div><div class="bar-meter big"><i id="d-week"></i></div><small id="d-week-reset"></small></div>
+          <h4>Ma consommation</h4>
+          <div class="stats" id="u-me"></div>
+          <p class="muted" id="u-cap"></p>
+          <p class="muted" id="d-earn"></p>
+          <div id="u-admin" hidden>
+            <h4>Toute la fédération <small>(administrateur)</small></h4>
+            <p class="status" id="conso-status" role="status"></p>
+            <div class="stats" id="conso-stats"></div>
+            <div class="days" id="conso-days" aria-label="Coût par jour"></div>
+            <div class="table-wrap"><table class="users"><thead><tr><th>Compte</th><th>Questions</th><th>Recherches</th><th>Jetons (entrée / sortie)</th><th>Coût</th></tr></thead><tbody id="conso-users"></tbody></table></div>
+          </div>
+        </section>
+        <section data-p="memoire" hidden>
+          <h3>Mémoire et compétences</h3>
+          <p class="muted">Ce que vous apprenez à ChatGDB. Les notes (faits, règles) et les compétences (procédures) sont enregistrées dans GitHub (dépôt privé) et ne sont pas envoyées avec chaque question : l’IA en voit le sommaire et lit celles dont elle a besoin. Elle peut vous proposer d’en créer, mais n’écrit jamais sans votre confirmation.</p>
+          <p class="status" id="mem-status" role="status"></p>
+          <div class="mem">
+            <div class="mem-list"><button class="btn small" id="mem-new" type="button"><svg class="ic sm"><use href="#i-plus"/></svg> Nouvelle</button><ul id="mem-items"></ul></div>
+            <form class="mem-form" id="mem-form" autocomplete="off">
+              <label class="field">Type<select id="mem-genre"><option value="note">Note (un fait, une règle)</option><option value="competence">Compétence (une procédure)</option></select></label>
+              <label class="field">Titre<input id="mem-titre" type="text" maxlength="120" required></label>
+              <label class="field">Mots-clés <small>(séparés par des virgules)</small><input id="mem-mots" type="text" maxlength="200"></label>
+              <label class="field">Contenu <small>(Markdown)</small><textarea id="mem-contenu" rows="8" maxlength="20000" required></textarea></label>
+              <div class="dlg-actions"><button class="btn danger" id="mem-del" type="button" hidden>Supprimer</button><button class="btn primary" type="submit">Enregistrer</button></div>
+            </form>
+          </div>
+        </section>
+        <section data-p="donnees" hidden>
+          <h3>Données</h3>
+          <p class="muted">Vos conversations et leurs pièces jointes sont gardées sur cet appareil. Les images et documents joints restent disponibles pour ChatGDB tout au long de la conversation.</p>
+          <button class="btn danger" id="set-clear" type="button">Supprimer toutes mes conversations</button>
+        </section>
+        <div class="set-foot"><button class="btn primary" id="set-save" type="button">Enregistrer</button></div>
+      </div>
     </div>
   </dialog>
 
-  <dialog id="dlg-conso" class="wide">
-    <h2>Consommation de ChatGDB</h2>
-    <p class="muted">Réservé à l’administrateur : votre propre usage est illimité, mais il est compté comme les autres. Coûts estimés d’après les tarifs publics (recherche web : 10 $ les 1 000).</p>
-    <p class="status" id="conso-status" role="status"></p>
-    <div class="stats" id="conso-stats"></div>
-    <div class="days" id="conso-days" aria-label="Coût par jour"></div>
-    <div class="table-wrap"><table class="users"><thead><tr><th>Compte</th><th>Questions</th><th>Recherches</th><th>Jetons (entrée / sortie)</th><th>Coût</th></tr></thead><tbody id="conso-users"></tbody></table></div>
-    <div class="dlg-actions"><button class="btn primary" type="button" data-close>Fermer</button></div>
-  </dialog>
-
-  <dialog id="dlg-settings">
-    <h2>Préférences</h2>
-    <label class="field">Instructions personnalisées <small>(facultatif, 600 caractères)</small>
-      <textarea id="set-custom" rows="4" maxlength="600" placeholder="Ex. : Je suis chef d’unité louveteaux, réponds simplement et propose des idées d’activités."></textarea></label>
-    <label class="field">Modèle d’IA
-      <select id="set-model"><option value="claude-haiku-5-5">Haiku 5.5 : rapide, économe en crédits</option><option value="claude-sonnet-5-5">Sonnet 5.5 : plus fin, environ 20 fois plus de crédits</option></select></label>
-    <label class="field">Niveau de réflexion
-      <select id="set-effort"><option value="low">Faible : réponses vives</option><option value="medium">Moyenne</option><option value="high">Élevée : raisonnement approfondi (plus lent, plus de crédits)</option></select></label>
-    <label class="field">Profondeur de la recherche web
-      <select id="set-depth"><option value="standard">Standard : quelques recherches ciblées</option><option value="approfondie">Approfondie : nombreuses recherches, pages lues en entier, recoupement des sources (lent, plus de crédits)</option></select></label>
-    <label class="check"><input type="checkbox" id="set-web"> Recherche web activée par défaut</label>
-    <label class="field">Style par défaut
-      <select id="set-style"><option value="concise">Réponse courte</option><option value="detail">Réponse détaillée</option></select></label>
-    <div class="dlg-actions"><button class="btn danger" id="set-clear" type="button">Supprimer l’historique</button><button class="btn primary" id="set-save" type="button">Enregistrer</button></div>
+  <!-- dépôt en bibliothèque (administrateur) -->
+  <dialog id="dlg-depot" class="dlg-simple">
+    <h2>Ajouter à la bibliothèque</h2>
+    <p class="muted">Le document est enregistré dans Google Drive <b>et</b> dans GitHub, et sa fiche entre dans la mémoire de ChatGDB.</p>
+    <label class="field">Rubrique <small>(par exemple « Pédagogie/Louveteaux », créée si besoin)</small><input id="dp-dossier" type="text" maxlength="200" required></label>
+    <label class="field">Nom du fichier<input id="dp-nom" type="text" maxlength="160" required></label>
+    <label class="field" id="dp-fmt-row">Format<select id="dp-fmt"><option value="pdf">PDF (converti)</option><option value="orig">Fichier d’origine</option></select></label>
+    <label class="field">Fiche pour la mémoire de ChatGDB <small>(facultatif, modifiable)</small><textarea id="dp-fiche" rows="7"></textarea></label>
+    <p class="status" id="dp-status" role="status"></p>
+    <div class="dlg-actions"><button class="btn" type="button" data-close>Annuler</button><button class="btn primary" id="dp-ok" type="button">Enregistrer</button></div>
   </dialog>
 
   <dialog id="dlg-image" class="lightbox"><button class="icon-btn lb-close" type="button" data-close aria-label="Fermer"><svg class="ic"><use href="#i-close"/></svg></button><img id="lb-img" alt=""></dialog>
