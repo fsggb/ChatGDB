@@ -237,3 +237,6 @@ dialog.wide{width:min(900px,calc(100% - 32px))}.status{min-height:18px;margin:0 
 .md a.applink{display:inline-flex;align-items:center;gap:6px;padding:3px 11px;margin:2px 0;border:1px solid var(--gold);border-radius:99px;background:color-mix(in srgb,var(--gold) 12%,var(--panel));text-decoration:none;font-weight:600;font-size:.92em}.md a.applink:hover{background:color-mix(in srgb,var(--gold) 28%,var(--panel))}.md a.applink .ic{width:14px;height:14px}
 .degrade{margin:0 0 8px;padding:7px 12px;border:1px solid var(--line);border-left:4px solid var(--gold);border-radius:10px;background:var(--panel);font-size:13px;color:var(--mute)}
 @media(max-width:900px){.set-wrap{grid-template-columns:1fr}.set-nav{flex-direction:row;overflow:auto;padding:12px;border-right:0;border-bottom:1px solid var(--line)}.set-nav h2{display:none}.set-nav button{white-space:nowrap}.menu{left:12px;bottom:76px}.view.page{padding:18px 16px}}
+
+/* applications intégrées */
+.art-body:has(.appbar){display:flex;flex-direction:column;overflow:hidden}.appbar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 12px;background:var(--surface-2,#f7f4ec);border-bottom:1px solid var(--line,#e4dfd2);font-size:13px;color:var(--muted,#667)}.appbar .btn{padding:4px 10px;font-size:12.5px}.art-body:has(.appbar) iframe{flex:1;height:auto;min-height:0}

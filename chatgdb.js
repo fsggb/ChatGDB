@@ -76,12 +76,14 @@
   }
 
   // ---------- artefacts : <artifact id="" type="" title="">…</artifact> ----------
+  const GA = window.GDBApps || { names: () => [] };
   const KINDS = {
     markdown: { ico: "file", label: "Document", ext: "md", mime: "text/markdown" },
     html: { ico: "globe", label: "Page web interactive", ext: "html", mime: "text/html" },
     svg: { ico: "image", label: "Image vectorielle", ext: "svg", mime: "image/svg+xml" },
     csv: { ico: "table", label: "Tableau", ext: "csv", mime: "text/csv" },
-    code: { ico: "code", label: "Code", ext: "txt", mime: "text/plain" }
+    code: { ico: "code", label: "Code", ext: "txt", mime: "text/plain" },
+    app: { ico: "layers", label: "Application ScoutHub", ext: "json", mime: "application/json" }
   };
   function parse(text) {
     const segs = []; let last = 0, n = 0; const re = /<artifact\b([^>]*)>([\s\S]*?)(?:<\/artifact>|$)/g; let m;
@@ -165,7 +167,7 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
   let convs = store.get(KEY, []).filter(c => c && Array.isArray(c.messages));
   convs.forEach(c => c.messages.forEach((m, i) => { if (!m.id) m.id = "m" + (c.id || "x") + "-" + i; }));
   let current = null, openArtId = null, openArtVer = 0, tab = "prev", busy = false, live = !!CFG.live, abort = null, pending = [], webOn = prefs.web;
-  let isAdmin = false, biblioApi = "", voiceServer = false, creditsInfo = null, view = "chat", liveSteps = [], pollTimer = 0, rid = "", closedMsg = "";
+  let isAdmin = false, biblioApi = "", voiceServer = false, creditsInfo = null, view = "chat", liveSteps = [], baseSteps = [], pollTimer = 0, rid = "", closedMsg = "";
   const persist = () => store.set(KEY, convs.slice(0, 100));
   const uid = () => "m" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
@@ -591,6 +593,13 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
     openArtId = id; openArtVer = Math.max(0, Math.min(ver, vers.length - 1)); tab = "prev";
     app.dataset.art = "open"; $("art").hidden = false; renderArt(conv); drawThread(false);
   }
+  // application ouverte par l'IA pendant son travail (hors conversation) : cadre visible, que la personne peut aussi utiliser
+  function mountLive(url, title) {
+    openArtId = null; app.dataset.art = "open"; $("art").hidden = false;
+    $("art-ico").innerHTML = '<use href="#i-layers"/>'; $("art-name").textContent = title || "Application"; $("art-kind").textContent = "Application ScoutHub · pilotée par ChatGDB";
+    $("art-ver").hidden = true; $("art-lib").hidden = true; $("tab-prev").parentElement.hidden = true;
+    const body = $("art-body"); body.textContent = ""; const f = GA.makeFrame(url, title); body.append(f); GA.setFrame(f); return f;
+  }
   function closeArt() { openArtId = null; app.dataset.art = "closed"; $("art").hidden = true; $("art").classList.remove("full"); }
   function renderArt(conv = current) {
     const vers = versionsOf(conv, openArtId), a = vers[openArtVer]; if (!a) return closeArt();
@@ -600,9 +609,15 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
     const sel = $("art-ver"); sel.hidden = vers.length < 2; sel.textContent = "";
     vers.forEach((_, i) => sel.append(el("option", { value: i, textContent: "Version " + (i + 1), selected: i === openArtVer })));
     $("tab-prev").setAttribute("aria-selected", String(tab === "prev")); $("tab-code").setAttribute("aria-selected", String(tab === "code"));
+    $("tab-prev").parentElement.hidden = false;
     const body = $("art-body"); body.textContent = "";
     if (tab === "code") { body.append(el("pre", { className: "raw", textContent: a.content })); return; }
     if (a.type === "markdown") { curSources = []; body.append(el("div", { className: "md", innerHTML: md(a.content) })); }
+    else if (a.type === "app") {
+      const u = GA.urlOf && GA.urlOf(GA.parseSpec(a.content));
+      if (!u) body.append(el("p", { className: "muted", style: "padding:18px", textContent: "Application inconnue ou non autorisée." }));
+      else { const f = GA.makeFrame(u.href, a.title); body.append(el("div", { className: "appbar" }, el("span", { textContent: "L’application est utilisable ici." }), el("a", { className: "btn", href: u.href, target: "_blank", rel: "noopener", textContent: "Ouvrir en pleine page" })), f); GA.setFrame(f); }
+    }
     else if (a.type === "html") {
       const csp = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data: blob: https:; style-src \'unsafe-inline\'; script-src \'unsafe-inline\'; font-src data:">';
       body.append(el("iframe", { title: a.title, sandbox: "allow-scripts", srcdoc: csp + a.content, referrerPolicy: "no-referrer" }));
@@ -745,11 +760,31 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
     }
     return out.reverse();
   }
-  function startPoll() { liveSteps = []; rid = uid(); clearInterval(pollTimer); pollTimer = setInterval(async () => { try { const o = await Hub.call("progression", { rid }); if (o.steps && o.steps.length !== liveSteps.length) { liveSteps = o.steps; updateLive(); } } catch { /* l'étape suivante réessaiera */ } }, 1800); }
+  function startPoll() { liveSteps = baseSteps = []; rid = uid(); clearInterval(pollTimer); pollTimer = setInterval(async () => { try { const o = await Hub.call("progression", { rid }); if (o.steps && o.steps.length + baseSteps.length !== liveSteps.length) { liveSteps = baseSteps.concat(o.steps); updateLive(); } } catch { /* l'étape suivante réessaiera */ } }, 1800); }
   async function ask() {
     busy = true; abort = new AbortController(); startPoll(); updateSend(); drawThread(); notice();
     try {
-      const out = await chatCall({ rid, style: prefs.style, custom: prefs.custom, web: webOn, modele: prefs.modele, effort: prefs.effort, profondeur: prefs.profondeur, messages: await history() }, abort.signal);
+      const msgs = await history(), apps = GA.names(), reprise = [], acc = { proposals: [], aides: [], depots: [], steps: [], sources: [], searches: [] }; let out;
+      for (;;) {
+        out = await chatCall({ rid, style: prefs.style, custom: prefs.custom, web: webOn, modele: prefs.modele, effort: prefs.effort, profondeur: prefs.profondeur, messages: msgs, ...(apps.length ? { apps } : {}), ...(reprise.length ? { reprise } : {}) }, abort.signal);
+        if (out.credits) credits(out.credits);
+        if (!out.attente) break;
+        // l'IA veut manipuler une application : on l'exécute ici, dans le cadre visible, puis on lui rend le résultat
+        ["proposals", "aides", "depots", "steps", "sources", "searches"].forEach(k => acc[k].push(...(out[k] || [])));
+        baseSteps = acc.steps.slice(); liveSteps = baseSteps; updateLive();
+        const results = (out.attente.resultats || []).slice();
+        for (const c of out.attente.appels || []) {
+          if (abort.signal.aborted) throw new DOMException("Interrompu", "AbortError");
+          const i = c.input || {}, st = { k: "outil", t: "Application " + (i.app || "") + " : " + (i.action || "") + (i.cible != null ? " n°" + i.cible : "") + (i.texte ? " « " + String(i.texte).slice(0, 40) + " »" : "") };
+          acc.steps.push(st); baseSteps = acc.steps.slice(); liveSteps = baseSteps; updateLive();
+          const r = await GA.exec(i, { mount: mountLive, unmount: closeArt });
+          results.push({ tool_use_id: c.id, texte: r.texte, image: r.image });
+        }
+        reprise.push({ assistant: out.attente.assistant, resultats: results });
+        reprise.forEach((t, k) => { if (k < reprise.length - 2) t.resultats.forEach(x => { if (x.image) { delete x.image; x.texte += "\n(capture plus ancienne retirée)"; } }); });
+        rid = uid();
+      }
+      out = { ...out, steps: acc.steps.concat(out.steps || []), proposals: acc.proposals.concat(out.proposals || []), aides: acc.aides.concat(out.aides || []), depots: acc.depots.concat(out.depots || []), sources: (out.sources || []).length ? out.sources : acc.sources, searches: acc.searches.concat(out.searches || []) };
       current.messages.push({ id: uid(), role: "assistant", text: String(out.text || ""), sources: out.sources || [], searches: out.searches || [], steps: out.steps || [], degrade: out.degrade ? out.degrade.raison : "", proposals: (out.proposals || []).map(p => ({ ...p, state: "" })), aides: (out.aides || []).map(a => ({ ...a, state: "" })), depots: (out.depots || []).map(d => ({ ...d, state: "" })), time: Date.now() });
       if (out.credits) credits(out.credits);
       current.updated = Date.now();
