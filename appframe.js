@@ -18,8 +18,10 @@
     if (!spec) return null;
     const a = registry().find(x => norm(x.name) === norm(spec.app)); if (!a) return null;
     const u = new URL(a.url.href);
-    const chemin = String(spec.chemin || "").replace(/^\/+/, "");
-    if (chemin) { if (/\.\.|[?#:\\]/.test(chemin)) return null; u.pathname = u.pathname.replace(/[^/]*$/, "") + chemin; }
+    const base = a.url.pathname.replace(/[^/]*$/, ""), chemin = String(spec.chemin || "").replace(/^\/+/, "");
+    // pas de « % » (« %2e%2e » serait normalisé en « .. » après le filtre), pas de « .. », de « ? », de « # », de « : », de « \\ »
+    if (chemin) { if (/%|\.\.|[?#:\\]/.test(chemin)) return null; u.pathname = base + chemin; }
+    if (!u.pathname.startsWith(base)) return null;
     const p = String(spec.params || "").replace(/^\?/, "");
     if (p) { const extra = new URLSearchParams(p); extra.forEach((v, k) => u.searchParams.set(k, v.slice(0, 600))); }
     return u.origin === location.origin ? u : null;
@@ -35,7 +37,9 @@
     return f;
   }
   const loaded = (f, ms = 15000) => new Promise(res => { let done = false; const end = () => { if (!done) { done = true; res(); } }; f.addEventListener("load", end, { once: true }); setTimeout(end, ms); });
-  const docOf = () => { try { return frame && frame.contentDocument && frame.contentDocument.body ? frame.contentDocument : null; } catch { return null; } };
+  // Le cadre doit rester dans le dossier d'une application autorisée (jamais admin.html, compte.html… du portail), même après un clic ou une redirection
+  const inApp = loc => registry().some(a => loc.origin === location.origin && loc.pathname.startsWith(a.url.pathname.replace(/[^/]*$/, "")) && !/%2e/i.test(loc.href));
+  const docOf = () => { try { if (!frame || !frame.contentDocument || !frame.contentDocument.body) return null; return inApp(frame.contentWindow.location) ? frame.contentDocument : null; } catch { return null; } };
 
   function label(e) {
     const t = e.getAttribute("aria-label") || e.getAttribute("title") || (e.innerText || "").trim() || e.getAttribute("placeholder") || e.getAttribute("alt") || e.value || e.id || "";
@@ -67,7 +71,7 @@
   function loadH2c() {
     if (window.html2canvas) return Promise.resolve(window.html2canvas);
     return h2cPromise || (h2cPromise = new Promise((res, rej) => {
-      const s = document.createElement("script"); s.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"; s.onload = () => res(window.html2canvas); s.onerror = () => { h2cPromise = null; rej(new Error("bibliothèque de capture indisponible")); }; document.head.append(s);
+      const s = document.createElement("script"); s.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"; s.integrity = "sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H"; s.crossOrigin = "anonymous"; s.onload = () => res(window.html2canvas); s.onerror = () => { h2cPromise = null; rej(new Error("bibliothèque de capture indisponible")); }; document.head.append(s);
     }));
   }
   async function capture() {
@@ -104,7 +108,7 @@
         return { texte: "Application ouverte : " + u.pathname + u.search + "\n\n" + snapshot() };
       }
       if (a === "fermer") { ctx.unmount(); frame = null; els = []; return { texte: "Application fermée." }; }
-      const d = docOf(); if (!d) return { texte: "Aucune application ouverte : utilise d'abord l'action « ouvrir »." };
+      const d = docOf(); if (!d) { if (frame) { try { frame.src = "about:blank"; } catch {} } return { texte: "Aucune application ouverte, ou la page est sortie du dossier de l'application (refusé) : utilise d'abord l'action « ouvrir »." }; }
       const w = d.defaultView;
       if (a === "lire") return { texte: snapshot() };
       if (a === "capture") {
@@ -128,6 +132,7 @@
       if (a === "saisir") {
         const e = els[(+input.cible) - 1]; if (!e || !e.isConnected) return { texte: "Élément introuvable : fais d'abord « lire »." };
         if ((e.type || "").toLowerCase() === "password") return { texte: "Refusé : jamais de mot de passe." };
+        if (e.tagName === "SELECT" || DANGER.test(label(e))) return { texte: "Refusé : « " + label(e) + " » est réservé à la personne (liste de choix, suppression, envoi, paiement ou déconnexion)." };
         e.focus(); setValue(e, String(input.texte == null ? "" : input.texte).slice(0, 4000));
         if (input.valider) ["keydown", "keypress", "keyup"].forEach(t => e.dispatchEvent(new w.KeyboardEvent(t, { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true })));
         await wait(900);

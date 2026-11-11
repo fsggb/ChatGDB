@@ -40,7 +40,10 @@
   const inline = t => {
     let h = esc(t);
     h = h.replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>").replace(/~~([^~]+)~~/g, "<del>$1</del>");
-    h = h.replace(/!\[([^\]]*)\]\((https:\/\/[^\s)]+)\)/g, '<img class="mdimg" src="$2" alt="$1" loading="lazy" referrerpolicy="no-referrer">');
+    // Une image n'est chargée automatiquement que si elle vient d'un site cité en source, sans paramètres dans l'adresse : sinon une page piégée pourrait
+    // faire sortir des données de la conversation par l'adresse de l'image. Dans les autres cas : simple lien, ouvert seulement si la personne clique.
+    const imgOk = u => { try { const x = new URL(u.replace(/&amp;/g, "&")); return !x.search && !x.hash && /\.(png|jpe?g|gif|webp)$/i.test(x.pathname) && curSources.some(s => host(s.url) === host(u)); } catch { return false; } };
+    h = h.replace(/!\[([^\]]*)\]\((https:\/\/[^\s)]+)\)/g, (m, alt, u) => imgOk(u) ? `<img class="mdimg" src="${u}" alt="${alt}" loading="lazy" referrerpolicy="no-referrer">` : `<a href="${u}" target="_blank" rel="noopener noreferrer">${alt || "image"}</a>`);
     h = h.replace(/\[([^\]]+)\]\((https:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
     h = h.replace(/<a href="(https:\/\/fsggb\.github\.io\/[^"]*)" target="_blank" rel="noopener noreferrer">/g, '<a class="applink" href="$1" target="_blank" rel="noopener noreferrer"><svg class="ic"><use href="#i-external"/></svg>');
     if (curSources.length) h = h.replace(/\[(\d{1,2})\](?!\()/g, (m, n) => +n >= 1 && +n <= curSources.length ? `<a class="cite" data-n="${n}" href="#" title="${esc(curSources[n - 1].title)}">${n}</a>` : m);
@@ -619,7 +622,7 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
       else { const f = GA.makeFrame(u.href, a.title); body.append(el("div", { className: "appbar" }, el("span", { textContent: "L’application est utilisable ici." }), el("a", { className: "btn", href: u.href, target: "_blank", rel: "noopener", textContent: "Ouvrir en pleine page" })), f); GA.setFrame(f); }
     }
     else if (a.type === "html") {
-      const csp = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data: blob: https:; style-src \'unsafe-inline\'; script-src \'unsafe-inline\'; font-src data:">';
+      const csp = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data: blob:; style-src \'unsafe-inline\'; script-src \'unsafe-inline\'; font-src data:; form-action \'none\'; base-uri \'none\'; frame-src \'none\'; connect-src \'none\'">';
       body.append(el("iframe", { title: a.title, sandbox: "allow-scripts", srcdoc: csp + a.content, referrerPolicy: "no-referrer" }));
     } else if (a.type === "svg") body.append(el("div", { className: "svgwrap" }, el("img", { alt: a.title, src: "data:image/svg+xml;charset=utf-8," + encodeURIComponent(a.content) })));
     else if (a.type === "csv") {
