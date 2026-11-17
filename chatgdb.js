@@ -865,9 +865,10 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
   }
   // Lit le flux SSE d'une réponse et reconstitue le message complet (blocs texte, outils, recherches web)
   async function fluxClaude(res, surTexte) {
-    const rd = res.body.getReader(), dec = new TextDecoder(); let buf = "", msg = null; const blocs = [], json = {};
+    const rd = res.body.getReader(), dec = new TextDecoder(); let buf = "", msg = null, coupure = ""; const blocs = [], json = {};
     for (;;) {
-      const { value, done } = await rd.read(); if (done) break;
+      let lu; try { lu = await rd.read(); } catch (e) { coupure = e.name === "AbortError" ? "" : (e.message || "connexion coupée"); if (e.name === "AbortError") throw e; break; }
+      const { value, done } = lu; if (done) break;
       buf += dec.decode(value, { stream: true }); let i;
       while ((i = buf.indexOf("\n\n")) >= 0) {
         const ev = buf.slice(0, i); buf = buf.slice(i + 2);
@@ -885,11 +886,15 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
         }
         else if (d.type === "content_block_stop") { if (d.index in json) { try { blocs[d.index].input = json[d.index] ? JSON.parse(json[d.index]) : {}; } catch { blocs[d.index].input = {}; } } }
         else if (d.type === "message_delta") { if (msg) { msg.stop_reason = d.delta.stop_reason; msg.usage = Object.assign(msg.usage || {}, d.usage || {}); } }
-        else if (d.type === "error") throw new Error(d.error && d.error.message || "Erreur de l’IA.");
+        else if (d.type === "error") { coupure = (d.error && d.error.message) || "erreur de l’IA"; break; }
       }
+      if (coupure) break;
     }
-    if (!msg) throw new Error("Réponse vide de l’IA.");
-    msg.content = blocs.filter(Boolean); return msg;
+    if (!msg) throw new Error(coupure ? "Réponse interrompue : " + coupure : "Réponse vide de l’IA.");
+    msg.content = blocs.filter(Boolean);
+    if (coupure) { msg.stop_reason = "interrompu"; msg.coupure = coupure; }          // la suite est demandée à Claude, rien n'est perdu
+    else if (!msg.stop_reason) { msg.stop_reason = "interrompu"; msg.coupure = "flux terminé trop tôt"; }
+    return msg;
   }
   async function askRapide() {
     debutReponse = Date.now(); clearInterval(chrono); chrono = setInterval(() => { if (!liveText) updateLive(); }, 1000);
@@ -901,15 +906,26 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
       const outils = conf.outils.map(o => o.name === "application" && GA.schema ? GA.schema(apps) : o);
       const hist = await history(), messages = hist.map(m => ({ role: m.role, content: contenuAnthropic(m) }));
       hist.forEach(m => { if (m.role === "user") (String(m.text || "").match(/https:\/\/[^\s)>"']+/g) || []).forEach(u => { urlsVues[u] = 1; }); });
-      let texte = "";
-      for (let tour = 0; tour < 40; tour++) {
-        const corps = { model: conf.modele, max_tokens: conf.jetons, stream: true, system: [{ type: "text", text: conf.systeme[0], cache_control: { type: "ephemeral" } }, { type: "text", text: conf.systeme[1] + (apps.length && GA.consignes ? "\n\n" + GA.consignes() : "") }], messages, tools: outils, output_config: { effort: prefs.effort || "low" } };
+      let texte = "", reprises = 0, termine = false;
+      const NB_TOURS = 40;
+      for (let tour = 0; tour < NB_TOURS; tour++) {
+        // Presque au bout des étapes : on demande la réponse finale, sans outils, pour que la réponse ne manque jamais
+        const dernier = tour >= NB_TOURS - 2, lastMsg = messages[messages.length - 1];
+        if (dernier && tour === NB_TOURS - 2 && lastMsg && lastMsg.role === "user" && Array.isArray(lastMsg.content)) lastMsg.content.push({ type: "text", text: "Tu as atteint le nombre maximal d’étapes. Donne maintenant ta réponse finale à la personne : ce qui est fait, ce qui reste à faire, et ce qu’elle peut faire elle-même pour finir." });
+        const corps = { model: conf.modele, max_tokens: Math.max(conf.jetons || 0, 12000), stream: true, system: [{ type: "text", text: conf.systeme[0], cache_control: { type: "ephemeral" } }, { type: "text", text: conf.systeme[1] + (apps.length && GA.consignes ? "\n\n" + GA.consignes() : "") }], messages, tools: outils, output_config: { effort: prefs.effort || "low" } };
         if ((prefs.effort && prefs.effort !== "low") || prefs.profondeur === "approfondie") corps.thinking = { type: "adaptive" };
+        if (dernier) corps.tool_choice = { type: "none" };
         // Relais (la clé reste chez lui, le navigateur n'a qu'un jeton signé) ou, à défaut, clé dédiée de l'administrateur
-        const res = conf.relais
-          ? await fetch(conf.relais, { method: "POST", signal: abort.signal, headers: { "content-type": "application/json", "x-scouthub-jeton": conf.jeton }, body: JSON.stringify(corps) })
-          : await fetch("https://api.anthropic.com/v1/messages", { method: "POST", signal: abort.signal, headers: { "content-type": "application/json", "x-api-key": conf.cle, "anthropic-version": conf.version, "anthropic-dangerous-direct-browser-access": "true", ...(conf.espace ? { "anthropic-workspace-id": conf.espace } : {}) }, body: JSON.stringify(corps) });
-        if (!res.ok) { let m = ""; try { m = (await res.json()).error.message; } catch {} throw new Error("Claude a refusé la demande (" + res.status + ")" + (m ? " : " + m : "")); }
+        const appeler = () => conf.relais
+          ? fetch(conf.relais, { method: "POST", signal: abort.signal, headers: { "content-type": "application/json", "x-scouthub-jeton": conf.jeton }, body: JSON.stringify(corps) })
+          : fetch("https://api.anthropic.com/v1/messages", { method: "POST", signal: abort.signal, headers: { "content-type": "application/json", "x-api-key": conf.cle, "anthropic-version": conf.version, "anthropic-dangerous-direct-browser-access": "true", ...(conf.espace ? { "anthropic-workspace-id": conf.espace } : {}) }, body: JSON.stringify(corps) });
+        let res;
+        for (let essai = 0; ; essai++) {          // surcharge ou coupure passagère : jusqu'à 3 essais, sans rien perdre
+          try { res = await appeler(); } catch (e) { if (e.name === "AbortError") throw e; if (essai < 2) { pas({ k: "web", t: "Connexion coupée : nouvel essai…" }); await new Promise(r => setTimeout(r, 1500 * (essai + 1))); continue; } throw new Error("Connexion au serveur impossible : vérifiez votre réseau, puis réessayez."); }
+          if ((res.status >= 500 || res.status === 529) && essai < 2) { pas({ k: "web", t: "Claude est surchargé : nouvel essai…" }); await new Promise(r => setTimeout(r, 2000 * (essai + 1))); continue; }
+          break;
+        }
+        if (!res.ok) { let m = ""; try { m = (await res.json()).error.message; } catch {} throw new Error(res.status === 429 ? (m || "Crédits épuisés pour le moment.") : "Claude a refusé la demande (" + res.status + ")" + (m ? " : " + m : "")); }
         const msg = await fluxClaude(res, t => { liveText += t; liveSoon(); });
         msg.content.forEach(b => {
           if (b.type === "text") (b.citations || []).forEach(c => { if (c.url && !(c.url in vus)) { vus[c.url] = 1; sources.push({ url: c.url, title: String(c.title || c.url).slice(0, 140) }); } });
@@ -920,6 +936,19 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
         texte = liveText;
         messages.push({ role: "assistant", content: msg.content });
         if (msg.stop_reason === "pause_turn") continue;
+        if (msg.stop_reason === "max_tokens" || msg.stop_reason === "interrompu") {
+          // réponse coupée (longueur ou connexion) : on demande la suite, au plus 4 fois
+          if (reprises++ >= 4) { texte += "\n\n*(réponse tronquée : redemandez « continue » pour la suite)*"; liveText = texte; break; }
+          pas({ k: "web", t: msg.stop_reason === "max_tokens" ? "Réponse longue : ChatGDB continue…" : "Connexion coupée : ChatGDB reprend…" });
+          const ids = new Set(msg.content.filter(b => /_tool_result$/.test(b.type)).map(b => b.tool_use_id));
+          const sain = msg.content.filter(b => b.type !== "tool_use" && !(b.type === "server_tool_use" && !ids.has(b.id)));
+          while (sain.length && /thinking/.test(sain[sain.length - 1].type)) sain.pop();
+          messages.pop(); if (sain.length) messages.push({ role: "assistant", content: sain });
+          const lm = messages[messages.length - 1], suite = { type: "text", text: "Continue exactement là où tu t’es arrêté, sans répéter ce qui est déjà écrit." };
+          if (lm && lm.role === "user") lm.content = (Array.isArray(lm.content) ? lm.content : [{ type: "text", text: String(lm.content) }]).concat([suite]); else messages.push({ role: "user", content: [suite] });
+          continue;
+        }
+        if (msg.stop_reason === "refusal") { texte += "\n\n*Claude a refusé de répondre à cette demande.*"; liveText = texte; break; }
         if (msg.stop_reason !== "tool_use") break;
         const resultats = [];
         for (const b of msg.content.filter(x => x.type === "tool_use")) {
@@ -945,12 +974,16 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
         messages.push({ role: "user", content: resultats });
         if (liveText && !/\n$/.test(liveText)) liveText += "\n\n";
       }
+      if (!texte.trim()) texte = "*ChatGDB n’a pas rédigé de réponse. Réessayez ou reformulez la demande.*";
       current.messages.push({ id: uid(), role: "assistant", duree: (Date.now() - debutReponse) / 1000, text: texte.trim(), sources, searches: [], steps, degrade: "", proposals: props.map(p => ({ ...p, state: "" })), aides: aides.map(a => ({ ...a, state: "" })), depots: depots.map(d => ({ ...d, state: "" })), time: Date.now() });
       current.updated = Date.now();
       Hub.call("credits").then(o => { if (o.credits) credits(o.credits); }).catch(() => {});
     } catch (e) {
-      if (e.name !== "AbortError") notice(e.message, true);
-      else if (liveText.trim()) current.messages.push({ id: uid(), role: "assistant", text: liveText.trim() + "\n\n*(interrompu)*", sources, searches: [], steps, proposals: [], aides: [], depots: [], time: Date.now() });
+      // Ce qui a déjà été écrit est conservé (rien n'est perdu) ; la raison est indiquée dans la conversation
+      const abandon = e.name === "AbortError";
+      if (!abandon) notice(e.message, true);
+      if (liveText.trim()) current.messages.push({ id: uid(), role: "assistant", duree: (Date.now() - debutReponse) / 1000, text: liveText.trim() + "\n\n*(" + (abandon ? "arrêté" : "réponse interrompue : " + String(e.message || "erreur").slice(0, 160)) + ")*", sources, searches: [], steps, proposals: [], aides: [], depots: [], time: Date.now() });
+      else if (!abandon) current.messages.push({ id: uid(), role: "assistant", text: "*ChatGDB n’a pas pu répondre : " + String(e.message || "erreur").slice(0, 200) + "*", sources: [], searches: [], steps, proposals: [], aides: [], depots: [], time: Date.now() });
     } finally {
       clearTimeout(liveTimer); liveTimer = 0; liveText = ""; clearInterval(chrono); debutReponse = 0; busy = false; abort = null; liveSteps = []; persist(); drawList(); drawThread(); updateSend();
       const last = current.messages[current.messages.length - 1];
