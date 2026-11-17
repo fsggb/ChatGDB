@@ -838,7 +838,10 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
       for (let tour = 0; tour < 25; tour++) {
         const corps = { model: conf.modele, max_tokens: conf.jetons, stream: true, system: [{ type: "text", text: conf.systeme[0], cache_control: { type: "ephemeral" } }, { type: "text", text: conf.systeme[1] }], messages, tools: outils, output_config: { effort: prefs.effort || "low" } };
         if ((prefs.effort && prefs.effort !== "low") || prefs.profondeur === "approfondie") corps.thinking = { type: "adaptive" };
-        const res = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", signal: abort.signal, headers: { "content-type": "application/json", "x-api-key": conf.cle, "anthropic-version": conf.version, "anthropic-dangerous-direct-browser-access": "true" }, body: JSON.stringify(corps) });
+        // Relais (la clé reste chez lui, le navigateur n'a qu'un jeton signé) ou, à défaut, clé dédiée de l'administrateur
+        const res = conf.relais
+          ? await fetch(conf.relais, { method: "POST", signal: abort.signal, headers: { "content-type": "application/json", "x-scouthub-jeton": conf.jeton }, body: JSON.stringify(corps) })
+          : await fetch("https://api.anthropic.com/v1/messages", { method: "POST", signal: abort.signal, headers: { "content-type": "application/json", "x-api-key": conf.cle, "anthropic-version": conf.version, "anthropic-dangerous-direct-browser-access": "true" }, body: JSON.stringify(corps) });
         if (!res.ok) { let m = ""; try { m = (await res.json()).error.message; } catch {} throw new Error("Claude a refusé la demande (" + res.status + ")" + (m ? " : " + m : "")); }
         const msg = await fluxClaude(res, t => { liveText += t; liveSoon(); });
         msg.content.forEach(b => {
