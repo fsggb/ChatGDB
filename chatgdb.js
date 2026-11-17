@@ -897,7 +897,8 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
     const steps = [], sources = [], vus = {}, props = [], aides = [], depots = [], urlsVues = {}, pas = t => { steps.push(t); liveSteps = steps.slice(); updateLive(); };
     try {
       const apps = GA.names(), conf = await Hub.call("rapide", { modele: prefs.modele, profondeur: prefs.profondeur, style: prefs.style, custom: prefs.custom, effort: prefs.effort, web: webOn, ...(apps.length ? { apps } : {}) });
-      const outils = conf.outils;
+      // l'outil « application » est décrit par la page elle-même (actions réellement disponibles dans ce navigateur)
+      const outils = conf.outils.map(o => o.name === "application" && GA.schema ? GA.schema(apps) : o);
       const hist = await history(), messages = hist.map(m => ({ role: m.role, content: contenuAnthropic(m) }));
       hist.forEach(m => { if (m.role === "user") (String(m.text || "").match(/https:\/\/[^\s)>"']+/g) || []).forEach(u => { urlsVues[u] = 1; }); });
       let texte = "";
