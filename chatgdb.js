@@ -902,7 +902,7 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
       const hist = await history(), messages = hist.map(m => ({ role: m.role, content: contenuAnthropic(m) }));
       hist.forEach(m => { if (m.role === "user") (String(m.text || "").match(/https:\/\/[^\s)>"']+/g) || []).forEach(u => { urlsVues[u] = 1; }); });
       let texte = "";
-      for (let tour = 0; tour < 25; tour++) {
+      for (let tour = 0; tour < 40; tour++) {
         const corps = { model: conf.modele, max_tokens: conf.jetons, stream: true, system: [{ type: "text", text: conf.systeme[0], cache_control: { type: "ephemeral" } }, { type: "text", text: conf.systeme[1] }], messages, tools: outils, output_config: { effort: prefs.effort || "low" } };
         if ((prefs.effort && prefs.effort !== "low") || prefs.profondeur === "approfondie") corps.thinking = { type: "adaptive" };
         // Relais (la clé reste chez lui, le navigateur n'a qu'un jeton signé) ou, à défaut, clé dédiée de l'administrateur
