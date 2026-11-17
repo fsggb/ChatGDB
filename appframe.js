@@ -74,7 +74,43 @@
       const s = document.createElement("script"); s.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"; s.integrity = "sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H"; s.crossOrigin = "anonymous"; s.onload = () => res(window.html2canvas); s.onerror = () => { h2cPromise = null; rej(new Error("bibliothèque de capture indisponible")); }; document.head.append(s);
     }));
   }
+  // ---------- Vue réelle de l'écran (applications dessinées en WebGL : une capture logicielle les voit blanches) ----------
+  // La personne autorise une fois le partage de cet onglet ; les captures suivantes viennent de la vraie image, recadrée sur l'application.
+  let ecran = null, video = null;
+  async function voir() {
+    if (ecran && ecran.active) return true;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) throw new Error("ce navigateur ne permet pas le partage d’écran");
+    ecran = await navigator.mediaDevices.getDisplayMedia({ video: { displaySurface: "browser", frameRate: 5 }, audio: false, preferCurrentTab: true, selfBrowserSurface: "include", surfaceSwitching: "exclude" });
+    const piste = ecran.getVideoTracks()[0];
+    try { if (window.CropTarget && frame && piste.cropTo) await piste.cropTo(await CropTarget.fromElement(frame)); piste.recadre = !!window.CropTarget; } catch { piste.recadre = false; }
+    piste.addEventListener("ended", () => { ecran = null; video = null; window.dispatchEvent(new Event("gdb-vue")); });
+    video = document.createElement("video"); video.muted = true; video.playsInline = true; video.srcObject = ecran; await video.play();
+    window.dispatchEvent(new Event("gdb-vue"));
+    return true;
+  }
+  const voitEcran = () => !!(ecran && ecran.active && video);
+  async function captureEcran() {
+    await wait(250);
+    const piste = ecran.getVideoTracks()[0], vw = video.videoWidth, vh = video.videoHeight; if (!vw || !vh) throw new Error("image d’écran indisponible");
+    let sx = 0, sy = 0, sw = vw, sh = vh;
+    if (!piste.recadre && frame) {   // onglet entier : on garde la zone de l'application
+      const r = frame.getBoundingClientRect(), k = vw / window.innerWidth;
+      sx = Math.max(0, r.left * k); sy = Math.max(0, r.top * k); sw = Math.min(vw - sx, r.width * k); sh = Math.min(vh - sy, r.height * k);
+    }
+    const w = frame ? frame.clientWidth : sw, h = frame ? frame.clientHeight : sh, scale = Math.min(1, 1000 / Math.max(1, w));
+    const cv = document.createElement("canvas"); cv.width = Math.round(w * scale); cv.height = Math.round(h * scale);
+    const g = cv.getContext("2d"); g.drawImage(video, sx, sy, sw, sh, 0, 0, cv.width, cv.height);
+    reperes(g, cv, w, h, scale);
+    return { m: "image/jpeg", d: cv.toDataURL("image/jpeg", 0.62).split(",")[1] };
+  }
+  function reperes(g, cv, w, h, scale) {
+    g.save(); g.strokeStyle = "rgba(232,89,12,.35)"; g.fillStyle = "rgba(232,89,12,.9)"; g.font = "bold " + Math.max(9, 11 * scale) + "px sans-serif"; g.lineWidth = 1;
+    for (let x = 100; x < w; x += 100) { g.beginPath(); g.moveTo(x * scale, 0); g.lineTo(x * scale, cv.height); g.stroke(); g.fillText(String(x), x * scale + 2, 11); }
+    for (let y = 100; y < h; y += 100) { g.beginPath(); g.moveTo(0, y * scale); g.lineTo(cv.width, y * scale); g.stroke(); g.fillText(String(y), 2, y * scale - 2); }
+    g.restore();
+  }
   async function capture() {
+    if (voitEcran()) { try { return await captureEcran(); } catch { /* on se rabat sur la capture logicielle */ } }
     const d = docOf(), w = d && d.defaultView; if (!d) throw new Error("aucune application ouverte");
     const h2c = await loadH2c();
     const scale = Math.min(1, 1000 / Math.max(1, w.innerWidth));
@@ -85,12 +121,12 @@
     const g = cv.getContext("2d");
     // Les canvas (2D ou 3D) que html2canvas laisse vides : recopiés tels quels quand le navigateur le permet
     d.querySelectorAll("canvas").forEach(c => { try { const r = c.getBoundingClientRect(); if (r.width > 20 && r.height > 20) g.drawImage(c, r.left * scale, r.top * scale, r.width * scale, r.height * scale); } catch { /* canvas protégé */ } });
-    // Repères tous les 100 px (coordonnées de la page) pour que l'IA puisse viser avec x et y
-    g.save(); g.strokeStyle = "rgba(232,89,12,.35)"; g.fillStyle = "rgba(232,89,12,.9)"; g.font = "bold " + Math.max(9, 11 * scale) + "px sans-serif"; g.lineWidth = 1;
-    for (let x = 100; x < w.innerWidth; x += 100) { g.beginPath(); g.moveTo(x * scale, 0); g.lineTo(x * scale, cv.height); g.stroke(); g.fillText(String(x), x * scale + 2, 11); }
-    for (let y = 100; y < w.innerHeight; y += 100) { g.beginPath(); g.moveTo(0, y * scale); g.lineTo(cv.width, y * scale); g.stroke(); g.fillText(String(y), 2, y * scale - 2); }
-    g.restore();
-    return { m: "image/jpeg", d: cv.toDataURL("image/jpeg", 0.62).split(",")[1] };
+    // Un grand canvas resté uni = application dessinée en WebGL, invisible pour une capture logicielle
+    let vide = false;
+    d.querySelectorAll("canvas").forEach(c => { const r = c.getBoundingClientRect(); if (r.width * r.height < w.innerWidth * w.innerHeight * 0.25) return; try { const px = g.getImageData(Math.round((r.left + r.width / 2) * scale), Math.round((r.top + r.height / 3) * scale), 40, 40).data; let diff = 0; for (let i = 4; i < px.length; i += 4) diff += Math.abs(px[i] - px[0]) + Math.abs(px[i + 1] - px[1]); if (diff < 50) vide = true; } catch { vide = true; } });
+    reperes(g, cv, w.innerWidth, w.innerHeight, scale);
+    window.dispatchEvent(new CustomEvent("gdb-vue", { detail: { besoin: vide } }));
+    return { m: "image/jpeg", d: cv.toDataURL("image/jpeg", 0.62).split(",")[1], vide };
   }
 
   // Curseur visible : une flèche dessinée par-dessus le cadre, qui glisse jusqu'au point visé avant chaque action
@@ -143,7 +179,11 @@
       if (a === "lire") return { texte: snapshot() };
       if (a === "capture") {
         const text = snapshot();
-        try { return { texte: "Capture de l'application (zone visible).\n\n" + text, image: await capture() }; }
+        try {
+          const im = await capture();
+          const note = im.vide ? "ATTENTION : cette application est dessinée en WebGL et la capture logicielle la voit vide (ce n'est pas l'application qui est vide). Demande à la personne de cliquer sur « Laisser ChatGDB voir l’application » au-dessus de l'application (partage de l'onglet, une fois) ; en attendant, appuie-toi sur « lire », sur la fiche de l'application et sur des actions par coordonnées.\n\n" : voitEcran() ? "Capture réelle de l'écran (partage autorisé par la personne).\n\n" : "";
+          delete im.vide; return { texte: note + "Capture de l'application (zone visible).\n\n" + text, image: im };
+        }
         catch (e) { return { texte: "Capture impossible (" + e.message + "). État en texte :\n\n" + text }; }
       }
       if (a === "defiler") { w.scrollBy({ top: Math.max(-3000, Math.min(3000, +input.dy || 400)), behavior: "instant" }); await wait(500); return { texte: snapshot() }; }
@@ -204,5 +244,5 @@
     } catch (e) { return { texte: "Erreur pendant l'action : " + (e && e.message || e) }; }
   }
 
-  window.GDBApps = { names, urlOf, parseSpec, makeFrame, exec, setFrame: f => { frame = f; }, hasFrame: () => !!frame, hideCursor };
+  window.GDBApps = { names, urlOf, parseSpec, makeFrame, exec, setFrame: f => { frame = f; }, hasFrame: () => !!frame, hideCursor, voir, voitEcran };
 })();
