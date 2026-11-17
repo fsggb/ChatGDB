@@ -768,7 +768,7 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
   function startPoll() { liveSteps = baseSteps = []; rid = uid(); clearInterval(pollTimer); pollTimer = setInterval(async () => { try { const o = await Hub.call("progression", { rid }); if (o.steps && o.steps.length + baseSteps.length !== liveSteps.length) { liveSteps = baseSteps.concat(o.steps); updateLive(); } } catch { /* l'étape suivante réessaiera */ } }, 1800); }
   // ---------- MODE RAPIDE (administrateur) : appel direct de Claude depuis le navigateur, réponse au fil de l'eau ----------
   // La clé dédiée est demandée au serveur à chaque conversation et gardée seulement en mémoire (jamais enregistrée).
-  let liveText = "", rapideOn = false, liveTimer = 0;
+  let liveText = "", rapideOn = false, rapideOk = false, liveTimer = 0;
   const liveSoon = () => { if (!liveTimer) liveTimer = setTimeout(() => { liveTimer = 0; updateLive(); }, 90); };
   const BASE_C = new URL("../connaissances/", location.href);
   let baseIdx = null;
@@ -885,7 +885,7 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
   if (rapideBtn) rapideBtn.addEventListener("click", () => { rapideOn = !rapideOn; prefs.rapide = rapideOn; store.set(PREFS_KEY, prefs); rapideBtn.setAttribute("aria-pressed", String(rapideOn)); toast(rapideOn ? "Mode rapide : la réponse s’affiche au fil de l’eau (sans mémoire ni bibliothèque)." : "Mode normal."); });
 
   async function ask() {
-    if (rapideOn && isAdmin) return askRapide();
+    if (rapideOn && rapideOk) return askRapide();
     busy = true; abort = new AbortController(); startPoll(); updateSend(); drawThread(); notice();
     try {
       const msgs = await history(), apps = GA.names(), reprise = [], acc = { proposals: [], aides: [], depots: [], steps: [], sources: [], searches: [] }; let out;
@@ -950,7 +950,8 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
   // ---------- état du serveur : ouvert pour ce compte ? crédits, dictée, bibliothèque ----------
   Hub.call("credits").then(o => {
     if (o.chat) live = true; voiceServer = !!o.voix; if (o.credits) credits(o.credits); biblioApi = o.biblio || "";
-    if (o.admin) { isAdmin = true; $("set-nav-mem").hidden = false; if (rapideBtn) { rapideBtn.hidden = false; rapideOn = !!prefs.rapide; rapideBtn.setAttribute("aria-pressed", String(rapideOn)); } }
+    if (o.admin) { isAdmin = true; $("set-nav-mem").hidden = false; }
+    if ((o.rapide || o.admin) && rapideBtn) { rapideOk = true; rapideBtn.hidden = false; rapideOn = !!prefs.rapide; rapideBtn.setAttribute("aria-pressed", String(rapideOn)); }
     if (!o.chat) closedMsg = o.raison === "cle" ? "ChatGDB attend la clé Claude du serveur (propriété ANTHROPIC_IA des propriétés du script ScoutHub)."
       : "ChatGDB est réservé aux administrateurs pour le moment. Vous êtes connecté en tant que « " + (Hub.ROLE_LABELS[o.role] || o.role) + " » (" + (o.email || user.email) + ").";
   }).catch(e => { closedMsg = /Action inconnue/.test(e.message) ? "Le serveur ScoutHub n’est pas à jour : collez le dernier Code.gs dans Apps Script et redéployez en « Nouvelle version »." : "Impossible de joindre le serveur ScoutHub : " + e.message; })
