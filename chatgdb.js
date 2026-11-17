@@ -477,6 +477,7 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
   function liveNode() {
     const n = el("div", { className: "msg bot", id: "live-msg" }, el("span", { className: "who" }, el("img", { src: LOGO.uri, alt: "" })));
     const body = el("div", { className: "body" }), sb = stepsBlock(liveSteps, true); if (sb) body.append(sb);
+    if (liveText) { const bb = botBody({ text: liveText, sources: [], searches: [], steps: [] }, current); bb.querySelectorAll(".actions").forEach(x => x.remove()); body.append(bb); n.append(body); return n; }
     body.append(el("span", { className: "typing" }, el("i"), el("i"), el("i"), document.createTextNode(webOn ? "ChatGDB réfléchit ou cherche…" : "ChatGDB réfléchit…")));
     n.append(body); return n;
   }
@@ -765,7 +766,123 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
     return out.reverse();
   }
   function startPoll() { liveSteps = baseSteps = []; rid = uid(); clearInterval(pollTimer); pollTimer = setInterval(async () => { try { const o = await Hub.call("progression", { rid }); if (o.steps && o.steps.length + baseSteps.length !== liveSteps.length) { liveSteps = baseSteps.concat(o.steps); updateLive(); } } catch { /* l'étape suivante réessaiera */ } }, 1800); }
+  // ---------- MODE RAPIDE (administrateur) : appel direct de Claude depuis le navigateur, réponse au fil de l'eau ----------
+  // La clé dédiée est demandée au serveur à chaque conversation et gardée seulement en mémoire (jamais enregistrée).
+  let liveText = "", rapideOn = false, liveTimer = 0;
+  const liveSoon = () => { if (!liveTimer) liveTimer = setTimeout(() => { liveTimer = 0; updateLive(); }, 90); };
+  const BASE_C = new URL("../connaissances/", location.href);
+  let baseIdx = null;
+  const normC = t => String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+  async function outilBase(nom, e) {
+    if (!baseIdx) { const r = await fetch(new URL("index.json", BASE_C)); if (!r.ok) return "Base de connaissances indisponible."; baseIdx = await r.json(); }
+    if (nom === "chercher_connaissances") {
+      const mots = normC(e.requete).split(" ").filter(m => m.length > 2).slice(0, 12), th = normC(e.theme), vois = {};
+      baseIdx.liens.forEach(l => { (vois[l.de] ||= []).push(l.vers); (vois[l.vers] ||= []).push(l.de); });
+      const res = baseIdx.fiches.map(f => {
+        if (th && normC(f.theme) !== th) return null;
+        const t = normC(f.titre), k = normC(f.mots_cles.join(" ")), x = normC(f.resume + " " + f.sections.join(" ") + " " + f.theme); let sc = 0;
+        mots.forEach(m => { const r = m.slice(0, Math.max(4, m.length - 2)); if (t.includes(r)) sc += 5; if (k.includes(r)) sc += 3; if (x.includes(r)) sc += 1; });
+        if (f.type === "document") sc -= .5; return sc > 0 ? { sc, f } : null;
+      }).filter(Boolean).sort((a, b) => b.sc - a.sc).slice(0, 8).map(({ f }) => ({ id: f.id, titre: f.titre, theme: f.theme, type: f.type, resume: f.resume, sections: f.sections.slice(0, 15), sources: f.sources, liees: (vois[f.id] || []).slice(0, 8) }));
+      return res.length ? JSON.stringify(res) : "Aucune fiche ne correspond : reformule, ou cherche sur le web.";
+    }
+    const id = String(e.id || "").replace(/[^a-z0-9-]/g, ""); const r = await fetch(new URL("fiches/" + id + ".json", BASE_C)); if (!r.ok) return "Fiche introuvable : " + id;
+    const f = await r.json(); let corps = f.contenu || "";
+    if (e.section) { const s = normC(e.section), ch = corps.split(/\n(?=#{2,3}\s)/).filter(p => normC(p.split("\n")[0]).includes(s)); if (ch.length) corps = ch.join("\n\n"); }
+    const src = (f.sources || []).map(x => "- " + (x.titre || "") + (x.pages ? " (p. " + x.pages + ")" : "") + (x.drive ? " https://drive.google.com/file/d/" + x.drive + "/view" : x.url ? " " + x.url : "")).join("\n");
+    return "# " + f.titre + " [" + f.theme + "]\n" + (f.resume ? f.resume + "\n\n" : "") + corps.slice(0, 40000) + (src ? "\n\nSources :\n" + src : "") + ((f.liens || []).length ? "\nFiches liées : " + f.liens.join(", ") : "");
+  }
+  function contenuAnthropic(m) {
+    if (m.role !== "user") return [{ type: "text", text: m.text || "…" }];
+    const c = [];
+    (m.images || []).forEach(i => c.push({ type: "image", source: { type: "base64", media_type: i.m, data: i.d } }));
+    (m.docs || []).forEach(d => c.push(d.m === "application/pdf" ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: d.d }, title: d.n } : { type: "text", text: "[" + d.n + "]" }));
+    c.push({ type: "text", text: m.text || "…" }); return c;
+  }
+  // Lit le flux SSE d'une réponse et reconstitue le message complet (blocs texte, outils, recherches web)
+  async function fluxClaude(res, surTexte) {
+    const rd = res.body.getReader(), dec = new TextDecoder(); let buf = "", msg = null; const blocs = [], json = {};
+    for (;;) {
+      const { value, done } = await rd.read(); if (done) break;
+      buf += dec.decode(value, { stream: true }); let i;
+      while ((i = buf.indexOf("\n\n")) >= 0) {
+        const ev = buf.slice(0, i); buf = buf.slice(i + 2);
+        const ligne = ev.split("\n").find(l => l.startsWith("data:")); if (!ligne) continue;
+        let d; try { d = JSON.parse(ligne.slice(5)); } catch { continue; }
+        if (d.type === "message_start") msg = d.message;
+        else if (d.type === "content_block_start") { blocs[d.index] = d.content_block; if (d.content_block.type === "tool_use" || d.content_block.type === "server_tool_use") json[d.index] = ""; }
+        else if (d.type === "content_block_delta") {
+          const b = blocs[d.index], x = d.delta;
+          if (x.type === "text_delta") { b.text = (b.text || "") + x.text; surTexte(x.text); }
+          else if (x.type === "input_json_delta") json[d.index] += x.partial_json;
+          else if (x.type === "thinking_delta") b.thinking = (b.thinking || "") + x.thinking;
+          else if (x.type === "signature_delta") b.signature = x.signature;
+          else if (x.type === "citations_delta") (b.citations ||= []).push(x.citation);
+        }
+        else if (d.type === "content_block_stop") { if (d.index in json) { try { blocs[d.index].input = json[d.index] ? JSON.parse(json[d.index]) : {}; } catch { blocs[d.index].input = {}; } } }
+        else if (d.type === "message_delta") { if (msg) { msg.stop_reason = d.delta.stop_reason; msg.usage = Object.assign(msg.usage || {}, d.usage || {}); } }
+        else if (d.type === "error") throw new Error(d.error && d.error.message || "Erreur de l’IA.");
+      }
+    }
+    if (!msg) throw new Error("Réponse vide de l’IA.");
+    msg.content = blocs.filter(Boolean); return msg;
+  }
+  async function askRapide() {
+    busy = true; abort = new AbortController(); liveText = ""; liveSteps = baseSteps = []; updateSend(); drawThread(); notice();
+    const steps = [], sources = [], vus = {}, pas = t => { steps.push(t); liveSteps = steps.slice(); updateLive(); };
+    try {
+      const apps = GA.names(), conf = await Hub.call("rapide", { modele: prefs.modele, profondeur: prefs.profondeur, style: prefs.style, custom: prefs.custom, ...(apps.length ? { apps } : {}) });
+      const outils = webOn ? conf.outils : conf.outils.filter(o => o.name !== "web_search");
+      const messages = (await history()).map(m => ({ role: m.role, content: contenuAnthropic(m) }));
+      let texte = "";
+      for (let tour = 0; tour < 25; tour++) {
+        const corps = { model: conf.modele, max_tokens: conf.jetons, stream: true, system: [{ type: "text", text: conf.systeme[0], cache_control: { type: "ephemeral" } }, { type: "text", text: conf.systeme[1] }], messages, tools: outils, output_config: { effort: prefs.effort || "low" } };
+        if ((prefs.effort && prefs.effort !== "low") || prefs.profondeur === "approfondie") corps.thinking = { type: "adaptive" };
+        const res = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", signal: abort.signal, headers: { "content-type": "application/json", "x-api-key": conf.cle, "anthropic-version": conf.version, "anthropic-dangerous-direct-browser-access": "true" }, body: JSON.stringify(corps) });
+        if (!res.ok) { let m = ""; try { m = (await res.json()).error.message; } catch {} throw new Error("Claude a refusé la demande (" + res.status + ")" + (m ? " : " + m : "")); }
+        const msg = await fluxClaude(res, t => { liveText += t; liveSoon(); });
+        msg.content.forEach(b => {
+          if (b.type === "text") (b.citations || []).forEach(c => { if (c.url && !(c.url in vus)) { vus[c.url] = 1; sources.push({ url: c.url, title: String(c.title || c.url).slice(0, 140) }); } });
+          if (b.type === "server_tool_use" && b.name === "web_search") pas({ k: "web", t: "Recherche web : " + ((b.input && b.input.query) || "") });
+        });
+        texte = liveText;
+        messages.push({ role: "assistant", content: msg.content });
+        if (msg.stop_reason === "pause_turn") continue;
+        if (msg.stop_reason !== "tool_use") break;
+        const resultats = [];
+        for (const b of msg.content.filter(x => x.type === "tool_use")) {
+          if (abort.signal.aborted) throw new DOMException("Interrompu", "AbortError");
+          const e = b.input || {};
+          if (b.name === "application") {
+            pas({ k: "outil", t: "Application " + (e.app || "") + " : " + (e.action || "") + (e.cible != null ? " n°" + e.cible : "") });
+            const r = await GA.exec(e, { mount: mountLive, unmount: closeArt });
+            resultats.push({ type: "tool_result", tool_use_id: b.id, content: r.image ? [{ type: "text", text: r.texte }, { type: "image", source: { type: "base64", media_type: r.image.m, data: r.image.d } }] : r.texte });
+          } else if (b.name === "chercher_connaissances" || b.name === "lire_fiche") {
+            pas({ k: "outil", t: b.name === "lire_fiche" ? "Lecture de la fiche " + (e.id || "") : "Base de connaissances : " + (e.requete || "") });
+            resultats.push({ type: "tool_result", tool_use_id: b.id, content: await outilBase(b.name, e) });
+          } else resultats.push({ type: "tool_result", tool_use_id: b.id, content: "Outil indisponible en mode rapide.", is_error: true });
+        }
+        // les anciennes captures d'écran sont retirées pour garder des requêtes légères
+        messages.forEach((m, k) => { if (k < messages.length - 4 && Array.isArray(m.content)) m.content.forEach(c => { if (c.type === "tool_result" && Array.isArray(c.content)) c.content = c.content.filter(x => x.type !== "image"); }); });
+        messages.push({ role: "user", content: resultats });
+        if (liveText && !/\n$/.test(liveText)) liveText += "\n\n";
+      }
+      current.messages.push({ id: uid(), role: "assistant", text: texte.trim(), sources, searches: [], steps, degrade: "", proposals: [], aides: [], depots: [], rapide: true, time: Date.now() });
+      current.updated = Date.now();
+    } catch (e) {
+      if (e.name !== "AbortError") notice(e.message, true);
+      else if (liveText.trim()) current.messages.push({ id: uid(), role: "assistant", text: liveText.trim() + "\n\n*(interrompu)*", sources, searches: [], steps, proposals: [], aides: [], depots: [], time: Date.now() });
+    } finally {
+      clearTimeout(liveTimer); liveTimer = 0; liveText = ""; busy = false; abort = null; liveSteps = []; persist(); drawList(); drawThread(); updateSend();
+      const last = current.messages[current.messages.length - 1];
+      if (last && last.role !== "user") { const a = parse(last.text).filter(s => s.t === "art").pop(); if (a) openArt(current, a.id, versionsOf(current, a.id).length - 1); }
+    }
+  }
+  const rapideBtn = $("rapide");
+  if (rapideBtn) rapideBtn.addEventListener("click", () => { rapideOn = !rapideOn; prefs.rapide = rapideOn; store.set(PREFS_KEY, prefs); rapideBtn.setAttribute("aria-pressed", String(rapideOn)); toast(rapideOn ? "Mode rapide : la réponse s’affiche au fil de l’eau (sans mémoire ni bibliothèque)." : "Mode normal."); });
+
   async function ask() {
+    if (rapideOn && isAdmin) return askRapide();
     busy = true; abort = new AbortController(); startPoll(); updateSend(); drawThread(); notice();
     try {
       const msgs = await history(), apps = GA.names(), reprise = [], acc = { proposals: [], aides: [], depots: [], steps: [], sources: [], searches: [] }; let out;
@@ -830,7 +947,7 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
   // ---------- état du serveur : ouvert pour ce compte ? crédits, dictée, bibliothèque ----------
   Hub.call("credits").then(o => {
     if (o.chat) live = true; voiceServer = !!o.voix; if (o.credits) credits(o.credits); biblioApi = o.biblio || "";
-    if (o.admin) { isAdmin = true; $("set-nav-mem").hidden = false; }
+    if (o.admin) { isAdmin = true; $("set-nav-mem").hidden = false; if (rapideBtn) { rapideBtn.hidden = false; rapideOn = !!prefs.rapide; rapideBtn.setAttribute("aria-pressed", String(rapideOn)); } }
     if (!o.chat) closedMsg = o.raison === "cle" ? "ChatGDB attend la clé Claude du serveur (propriété ANTHROPIC_IA des propriétés du script ScoutHub)."
       : "ChatGDB est réservé aux administrateurs pour le moment. Vous êtes connecté en tant que « " + (Hub.ROLE_LABELS[o.role] || o.role) + " » (" + (o.email || user.email) + ").";
   }).catch(e => { closedMsg = /Action inconnue/.test(e.message) ? "Le serveur ScoutHub n’est pas à jour : collez le dernier Code.gs dans Apps Script et redéployez en « Nouvelle version »." : "Impossible de joindre le serveur ScoutHub : " + e.message; })
