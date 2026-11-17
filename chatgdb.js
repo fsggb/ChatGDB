@@ -543,8 +543,9 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
   }
   // --- dépôt en bibliothèque (administrateur) : Drive + GitHub, puis fiche en mémoire ---
   async function libCall(action, data) {
-    if (!biblioApi) throw new Error("La bibliothèque n’est pas configurée côté serveur (BIBLIO_API).");
-    let res; try { res = await fetch(biblioApi, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action, token: Hub.token, ...data }) }); } catch { throw new Error("Serveur de la bibliothèque injoignable."); }
+    if (!biblioApi) throw new Error("La bibliothèque n’est pas configurée côté serveur (BIBLIO_DOSSIER).");
+    // la bibliothèque est un module du serveur ScoutHub (même adresse, même session)
+    let res; try { res = await fetch(window.SCOUTHUB_API, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ ...data, action: "app", app: "bibliotheque", fn: action, token: Hub.token }) }); } catch { throw new Error("Serveur de la bibliothèque injoignable."); }
     let out; try { out = await res.json(); } catch { throw new Error("Réponse invalide de la bibliothèque."); }
     if (!out.ok) throw new Error(out.error || "Erreur de la bibliothèque."); return out;
   }
