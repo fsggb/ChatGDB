@@ -768,7 +768,7 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
   function startPoll() { liveSteps = baseSteps = []; rid = uid(); clearInterval(pollTimer); pollTimer = setInterval(async () => { try { const o = await Hub.call("progression", { rid }); if (o.steps && o.steps.length + baseSteps.length !== liveSteps.length) { liveSteps = baseSteps.concat(o.steps); updateLive(); } } catch { /* l'étape suivante réessaiera */ } }, 1800); }
   // ---------- MODE RAPIDE (administrateur) : appel direct de Claude depuis le navigateur, réponse au fil de l'eau ----------
   // La clé dédiée est demandée au serveur à chaque conversation et gardée seulement en mémoire (jamais enregistrée).
-  let liveText = "", rapideOn = false, rapideOk = false, liveTimer = 0;
+  let liveText = "", rapideOk = false, liveTimer = 0;
   const liveSoon = () => { if (!liveTimer) liveTimer = setTimeout(() => { liveTimer = 0; updateLive(); }, 90); };
   const BASE_C = new URL("../connaissances/", location.href);
   let baseIdx = null;
@@ -829,11 +829,12 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
   }
   async function askRapide() {
     busy = true; abort = new AbortController(); liveText = ""; liveSteps = baseSteps = []; updateSend(); drawThread(); notice();
-    const steps = [], sources = [], vus = {}, pas = t => { steps.push(t); liveSteps = steps.slice(); updateLive(); };
+    const steps = [], sources = [], vus = {}, props = [], aides = [], depots = [], urlsVues = {}, pas = t => { steps.push(t); liveSteps = steps.slice(); updateLive(); };
     try {
-      const apps = GA.names(), conf = await Hub.call("rapide", { modele: prefs.modele, profondeur: prefs.profondeur, style: prefs.style, custom: prefs.custom, ...(apps.length ? { apps } : {}) });
-      const outils = webOn ? conf.outils : conf.outils.filter(o => o.name !== "web_search");
-      const messages = (await history()).map(m => ({ role: m.role, content: contenuAnthropic(m) }));
+      const apps = GA.names(), conf = await Hub.call("rapide", { modele: prefs.modele, profondeur: prefs.profondeur, style: prefs.style, custom: prefs.custom, effort: prefs.effort, web: webOn, ...(apps.length ? { apps } : {}) });
+      const outils = conf.outils;
+      const hist = await history(), messages = hist.map(m => ({ role: m.role, content: contenuAnthropic(m) }));
+      hist.forEach(m => { if (m.role === "user") (String(m.text || "").match(/https:\/\/[^\s)>"']+/g) || []).forEach(u => { urlsVues[u] = 1; }); });
       let texte = "";
       for (let tour = 0; tour < 25; tour++) {
         const corps = { model: conf.modele, max_tokens: conf.jetons, stream: true, system: [{ type: "text", text: conf.systeme[0], cache_control: { type: "ephemeral" } }, { type: "text", text: conf.systeme[1] }], messages, tools: outils, output_config: { effort: prefs.effort || "low" } };
@@ -841,12 +842,14 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
         // Relais (la clé reste chez lui, le navigateur n'a qu'un jeton signé) ou, à défaut, clé dédiée de l'administrateur
         const res = conf.relais
           ? await fetch(conf.relais, { method: "POST", signal: abort.signal, headers: { "content-type": "application/json", "x-scouthub-jeton": conf.jeton }, body: JSON.stringify(corps) })
-          : await fetch("https://api.anthropic.com/v1/messages", { method: "POST", signal: abort.signal, headers: { "content-type": "application/json", "x-api-key": conf.cle, "anthropic-version": conf.version, "anthropic-dangerous-direct-browser-access": "true" }, body: JSON.stringify(corps) });
+          : await fetch("https://api.anthropic.com/v1/messages", { method: "POST", signal: abort.signal, headers: { "content-type": "application/json", "x-api-key": conf.cle, "anthropic-version": conf.version, "anthropic-dangerous-direct-browser-access": "true", ...(conf.espace ? { "anthropic-workspace-id": conf.espace } : {}) }, body: JSON.stringify(corps) });
         if (!res.ok) { let m = ""; try { m = (await res.json()).error.message; } catch {} throw new Error("Claude a refusé la demande (" + res.status + ")" + (m ? " : " + m : "")); }
         const msg = await fluxClaude(res, t => { liveText += t; liveSoon(); });
         msg.content.forEach(b => {
           if (b.type === "text") (b.citations || []).forEach(c => { if (c.url && !(c.url in vus)) { vus[c.url] = 1; sources.push({ url: c.url, title: String(c.title || c.url).slice(0, 140) }); } });
           if (b.type === "server_tool_use" && b.name === "web_search") pas({ k: "web", t: "Recherche web : " + ((b.input && b.input.query) || "") });
+          if (b.type === "server_tool_use" && b.name === "web_fetch") pas({ k: "web", t: "Lecture de " + ((b.input && b.input.url) || "") });
+          if (b.type === "web_search_tool_result" && Array.isArray(b.content)) b.content.forEach(x => { if (x.url) urlsVues[x.url] = 1; });
         });
         texte = liveText;
         messages.push({ role: "assistant", content: msg.content });
@@ -863,15 +866,22 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
           } else if (b.name === "chercher_connaissances" || b.name === "lire_fiche") {
             pas({ k: "outil", t: b.name === "lire_fiche" ? "Lecture de la fiche " + (e.id || "") : "Base de connaissances : " + (e.requete || "") });
             resultats.push({ type: "tool_result", tool_use_id: b.id, content: await outilBase(b.name, e) });
-          } else resultats.push({ type: "tool_result", tool_use_id: b.id, content: "Outil indisponible en mode rapide.", is_error: true });
+          } else {
+            // outils qui ont besoin du serveur ScoutHub : mémoire, bibliothèque, dépôts GitHub, image distante, propositions
+            pas({ k: "outil", t: ETIQ_OUTILS[b.name] ? ETIQ_OUTILS[b.name](e) : "Outil : " + b.name });
+            let out; try { out = await Hub.call("outil", { nom: b.name, input: e, urls: Object.keys(urlsVues) }); } catch (err) { out = { resultat: "Erreur : " + err.message }; }
+            props.push(...(out.propositions || [])); aides.push(...(out.aides || [])); depots.push(...(out.depots || []));
+            resultats.push({ type: "tool_result", tool_use_id: b.id, content: out.resultat == null ? "(aucun résultat)" : out.resultat });
+          }
         }
         // les anciennes captures d'écran sont retirées pour garder des requêtes légères
         messages.forEach((m, k) => { if (k < messages.length - 4 && Array.isArray(m.content)) m.content.forEach(c => { if (c.type === "tool_result" && Array.isArray(c.content)) c.content = c.content.filter(x => x.type !== "image"); }); });
         messages.push({ role: "user", content: resultats });
         if (liveText && !/\n$/.test(liveText)) liveText += "\n\n";
       }
-      current.messages.push({ id: uid(), role: "assistant", text: texte.trim(), sources, searches: [], steps, degrade: "", proposals: [], aides: [], depots: [], rapide: true, time: Date.now() });
+      current.messages.push({ id: uid(), role: "assistant", text: texte.trim(), sources, searches: [], steps, degrade: "", proposals: props.map(p => ({ ...p, state: "" })), aides: aides.map(a => ({ ...a, state: "" })), depots: depots.map(d => ({ ...d, state: "" })), time: Date.now() });
       current.updated = Date.now();
+      Hub.call("credits").then(o => { if (o.credits) credits(o.credits); }).catch(() => {});
     } catch (e) {
       if (e.name !== "AbortError") notice(e.message, true);
       else if (liveText.trim()) current.messages.push({ id: uid(), role: "assistant", text: liveText.trim() + "\n\n*(interrompu)*", sources, searches: [], steps, proposals: [], aides: [], depots: [], time: Date.now() });
@@ -881,11 +891,17 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
       if (last && last.role !== "user") { const a = parse(last.text).filter(s => s.t === "art").pop(); if (a) openArt(current, a.id, versionsOf(current, a.id).length - 1); }
     }
   }
-  const rapideBtn = $("rapide");
-  if (rapideBtn) rapideBtn.addEventListener("click", () => { rapideOn = !rapideOn; prefs.rapide = rapideOn; store.set(PREFS_KEY, prefs); rapideBtn.setAttribute("aria-pressed", String(rapideOn)); toast(rapideOn ? "Mode rapide : la réponse s’affiche au fil de l’eau (sans mémoire ni bibliothèque)." : "Mode normal."); });
+  // Étiquettes des étapes pour les outils exécutés par le serveur
+  const ETIQ_OUTILS = {
+    chercher_memoire: e => "Mémoire : " + (e.requete || ""), lire_memoire: e => "Lecture d’une note de mémoire",
+    chercher_bibliotheque: e => "Bibliothèque : " + (e.requete || ""), lire_document: () => "Lecture d’un document de la bibliothèque",
+    lister_depot: e => "Exploration du dépôt " + (e.depot || "") + " : /" + (e.chemin || ""), lire_depot: e => "Lecture de " + (e.depot || "") + "/" + (e.chemin || ""),
+    voir_image: () => "Observation d’une image", proposer_memoire: e => "Proposition pour la mémoire : " + (e.titre || ""),
+    proposer_depot_bibliotheque: e => "Préparation d’un dépôt en bibliothèque : " + (e.nom || ""), preparer_demande_aide: () => "Rédaction du message au service informatique"
+  };
 
   async function ask() {
-    if (rapideOn && rapideOk) return askRapide();
+    if (rapideOk) return askRapide();
     busy = true; abort = new AbortController(); startPoll(); updateSend(); drawThread(); notice();
     try {
       const msgs = await history(), apps = GA.names(), reprise = [], acc = { proposals: [], aides: [], depots: [], steps: [], sources: [], searches: [] }; let out;
@@ -951,7 +967,7 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
   Hub.call("credits").then(o => {
     if (o.chat) live = true; voiceServer = !!o.voix; if (o.credits) credits(o.credits); biblioApi = o.biblio || "";
     if (o.admin) { isAdmin = true; $("set-nav-mem").hidden = false; }
-    if ((o.rapide || o.admin) && rapideBtn) { rapideOk = true; rapideBtn.hidden = false; rapideOn = !!prefs.rapide; rapideBtn.setAttribute("aria-pressed", String(rapideOn)); }
+    rapideOk = !!o.rapide;      // réponses au fil de l'eau par le relais Cloudflare, pour tout le monde
     if (!o.chat) closedMsg = o.raison === "cle" ? "ChatGDB attend la clé Claude du serveur (propriété ANTHROPIC_IA des propriétés du script ScoutHub)."
       : "ChatGDB est réservé aux administrateurs pour le moment. Vous êtes connecté en tant que « " + (Hub.ROLE_LABELS[o.role] || o.role) + " » (" + (o.email || user.email) + ").";
   }).catch(e => { closedMsg = /Action inconnue/.test(e.message) ? "Le serveur ScoutHub n’est pas à jour : collez le dernier Code.gs dans Apps Script et redéployez en « Nouvelle version »." : "Impossible de joindre le serveur ScoutHub : " + e.message; })
