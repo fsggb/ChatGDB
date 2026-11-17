@@ -834,7 +834,7 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
   // La clé dédiée est demandée au serveur à chaque conversation et gardée seulement en mémoire (jamais enregistrée).
   let liveText = "", rapideOk = false, liveTimer = 0;
   const liveSoon = () => { if (!liveTimer) liveTimer = setTimeout(() => { liveTimer = 0; updateLive(); }, 90); };
-  const BASE_C = new URL("../connaissances/", location.href);
+  const BASE_C = new URL("/ScoutHub/connaissances/", location.origin);
   let baseIdx = null;
   const normC = t => String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
   async function outilBase(nom, e) {

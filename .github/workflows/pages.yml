@@ -1,0 +1,36 @@
+name: Publier ChatGDB
+
+# ChatGDB publié seul sur https://fsggb.github.io/ChatGDB/ (en plus de son assemblage dans ScoutHub :
+# https://fsggb.github.io/ScoutHub/ChatGDB/). Même site (fsggb.github.io) : la connexion ScoutHub est partagée.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - run: mkdir build && tar -c --exclude='./.git' --exclude='./.github' --exclude='*.md' . | tar -x -C build
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build
+      - id: deployment
+        uses: actions/deploy-pages@v4

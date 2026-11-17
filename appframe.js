@@ -4,7 +4,7 @@
 // les boutons destructeurs ou d'envoi sont refusés, les mots de passe jamais saisis, les liens externes jamais suivis.
 (() => {
   "use strict";
-  const BASE = new URL("../", location.href);                       // …/ScoutHub/
+  const BASE = new URL("/ScoutHub/", location.origin);              // le portail ScoutHub, que ChatGDB soit servi par lui ou par son propre dépôt
   const BLOCK = /^(scoutcloud|chatgdb|aide|boutique)/i;
   const DANGER = /supprim|effac|vider|corbeille|envoy|payer|paiement|command|d[ée]connex|r[ée]initialis|quitter|d[ée]sinstall|retirer le compte/i;
   const norm = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "");
