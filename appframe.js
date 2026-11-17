@@ -34,7 +34,22 @@
   function makeFrame(url, title) {
     const f = document.createElement("iframe");
     f.title = title || "Application"; f.setAttribute("sandbox", sandbox); f.allow = "clipboard-write; fullscreen"; f.referrerPolicy = "no-referrer"; f.src = url;
+    garderImage(f);
     return f;
+  }
+  // Les applications dessinées en WebGL (tableur, CAO, 3D) effacent leur image après chaque affichage : une capture la voit blanche.
+  // Dès que la page de l'application existe (avant qu'elle crée son dessin), on lui demande de garder l'image ; ChatGDB peut alors la voir.
+  function garderImage(f) {
+    const t = setInterval(() => {
+      if (!f.isConnected && f.dataset.vu) { clearInterval(t); return; }
+      if (f.isConnected) f.dataset.vu = "1";
+      let w; try { w = f.contentWindow; if (!w || w.location.href === "about:blank" || w.__gdbImage || !w.HTMLCanvasElement) return; } catch { return; }
+      try {
+        const orig = w.HTMLCanvasElement.prototype.getContext;
+        w.HTMLCanvasElement.prototype.getContext = function (type, attrs) { if (/^(webgl|webgl2|experimental-webgl)$/.test(type)) attrs = Object.assign({}, attrs, { preserveDrawingBuffer: true }); return orig.call(this, type, attrs); };
+        w.__gdbImage = true;
+      } catch { /* page d'une autre origine : rien à faire */ }
+    }, 15);
   }
   const loaded = (f, ms = 15000) => new Promise(res => { let done = false; const end = () => { if (!done) { done = true; res(); } }; f.addEventListener("load", end, { once: true }); setTimeout(end, ms); });
   // Le cadre doit rester dans le dossier d'une application autorisée (jamais admin.html, compte.html… du portail), même après un clic ou une redirection

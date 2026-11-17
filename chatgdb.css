@@ -252,3 +252,13 @@ dialog.wide{width:min(900px,calc(100% - 32px))}.status{min-height:18px;margin:0 
 .art-src{width:100%;height:100%;box-sizing:border-box;resize:none;border:0;border-bottom:1px solid var(--line);padding:14px 16px;font:13px/1.55 ui-monospace,Consolas,monospace;background:var(--bg,transparent);color:var(--text);tab-size:2;outline:none}
 .art.full .art-src{border-bottom:0;border-right:1px solid var(--line)}
 .art-prev{overflow:auto;min-height:0;background:var(--surface,transparent)}.art-prev iframe{width:100%;height:100%;border:0;background:#fff;display:block}
+
+/* Conversation façon messagerie : la personne à droite, ChatGDB à gauche, chacun dans sa bulle ; heure et durée de réponse */
+.msg.user{flex-direction:row-reverse}
+.msg.user .body{display:flex;flex-direction:column;align-items:flex-end}
+.msg.user .bubble{max-width:min(80%,600px);border-radius:16px 4px 16px 16px;display:flex;flex-direction:column}
+.msg.user .actions{justify-content:flex-end}
+.msg.bot .body{flex:0 1 auto;max-width:min(92%,720px);background:var(--panel);border:1px solid var(--line);border-radius:4px 16px 16px 16px;padding:10px 14px}
+.msg.bot .body:has(> .typing:only-child){padding:8px 12px}
+.msg .meta{display:block;align-self:flex-end;margin-top:4px;font-size:11.5px;color:var(--mute);text-align:right;white-space:nowrap}
+.msg.bot .meta{text-align:left}

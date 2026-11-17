@@ -458,12 +458,12 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
       const btn = (i2, label, title, fn) => { const b = el("button", { type: "button", title, ariaLabel: title, innerHTML: ic(i2) + (label ? esc(label) : "") }); b.onclick = fn; acts.append(b); return b; };
       if (m.role === "user") {
         const body = el("div", { className: "body" }), a = attsOf(m); if (a) body.append(a);
-        body.append(el("div", { className: "bubble", textContent: m.text }));
+        body.append(el("div", { className: "bubble", textContent: m.text }, metaMsg(m)));
         btn("copy", "", "Copier", () => copy(m.text));
         if (!current.example && live && !busy) btn("pencil", "", "Modifier le message", () => editMsg(i, body));
         body.append(acts); msg.append(body);
       } else {
-        const body = botBody(m, current);
+        const body = botBody(m, current); body.append(metaMsg(m));
         btn("copy", "Copier", "Copier la réponse", () => copy(m.text.replace(/<\/?artifact[^>]*>/g, "")));
         const up = btn("up", "", "Bonne réponse", () => { m.fb = m.fb === "up" ? "" : "up"; persist(); up.classList.toggle("on", m.fb === "up"); dn.classList.remove("on"); toast("Merci pour votre retour."); });
         const dn = btn("down", "", "Réponse insuffisante", () => { m.fb = m.fb === "down" ? "" : "down"; persist(); dn.classList.toggle("on", m.fb === "down"); up.classList.remove("on"); toast("Merci, nous en tenons compte."); });
@@ -476,11 +476,19 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
     if (busy) th.append(liveNode());
     if (scroll) th.scrollTop = th.scrollHeight;
   }
+  // Heure du message et, pour ChatGDB, le temps mis à répondre (en secondes)
+  const hhmm = t => { const d = new Date(t); return d.getHours().toString().padStart(2, "0") + ":" + d.getMinutes().toString().padStart(2, "0"); };
+  const duree = s => s < 60 ? s.toFixed(s < 10 ? 1 : 0).replace(".", ",") + " s" : Math.floor(s / 60) + " min " + Math.round(s % 60) + " s";
+  function metaMsg(m) {
+    const t = m.time ? hhmm(m.time) : "";
+    return el("span", { className: "meta", textContent: m.role === "user" ? t : (m.duree ? "Réponse en " + duree(m.duree) + (t ? " · " + t : "") : t) });
+  }
+  let debutReponse = 0, chrono = 0;
   function liveNode() {
     const n = el("div", { className: "msg bot", id: "live-msg" }, el("span", { className: "who" }, el("img", { src: LOGO.uri, alt: "" })));
     const body = el("div", { className: "body" }), sb = stepsBlock(liveSteps, true); if (sb) body.append(sb);
-    if (liveText) { const bb = botBody({ text: liveText, sources: [], searches: [], steps: [] }, current); bb.querySelectorAll(".actions").forEach(x => x.remove()); body.append(bb); n.append(body); return n; }
-    body.append(el("span", { className: "typing" }, el("i"), el("i"), el("i"), document.createTextNode(webOn ? "ChatGDB réfléchit ou cherche…" : "ChatGDB réfléchit…")));
+    if (liveText) { const bb = botBody({ text: liveText, sources: [], searches: [], steps: [] }, current); bb.querySelectorAll(".actions").forEach(x => x.remove()); body.append(bb, el("span", { className: "meta", textContent: "En cours… " + Math.floor((Date.now() - debutReponse) / 1000) + " s" })); n.append(body); return n; }
+    body.append(el("span", { className: "typing" }, el("i"), el("i"), el("i"), document.createTextNode((webOn ? "ChatGDB réfléchit ou cherche…" : "ChatGDB réfléchit…") + (debutReponse ? " " + Math.floor((Date.now() - debutReponse) / 1000) + " s" : ""))));
     n.append(body); return n;
   }
   function updateLive() { const old = $("live-msg"); if (old) { const n = liveNode(); old.replaceWith(n); $("thread").scrollTop = $("thread").scrollHeight; } }
@@ -884,6 +892,7 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
     msg.content = blocs.filter(Boolean); return msg;
   }
   async function askRapide() {
+    debutReponse = Date.now(); clearInterval(chrono); chrono = setInterval(() => { if (!liveText) updateLive(); }, 1000);
     busy = true; abort = new AbortController(); liveText = ""; liveSteps = baseSteps = []; updateSend(); drawThread(); notice();
     const steps = [], sources = [], vus = {}, props = [], aides = [], depots = [], urlsVues = {}, pas = t => { steps.push(t); liveSteps = steps.slice(); updateLive(); };
     try {
@@ -935,14 +944,14 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
         messages.push({ role: "user", content: resultats });
         if (liveText && !/\n$/.test(liveText)) liveText += "\n\n";
       }
-      current.messages.push({ id: uid(), role: "assistant", text: texte.trim(), sources, searches: [], steps, degrade: "", proposals: props.map(p => ({ ...p, state: "" })), aides: aides.map(a => ({ ...a, state: "" })), depots: depots.map(d => ({ ...d, state: "" })), time: Date.now() });
+      current.messages.push({ id: uid(), role: "assistant", duree: (Date.now() - debutReponse) / 1000, text: texte.trim(), sources, searches: [], steps, degrade: "", proposals: props.map(p => ({ ...p, state: "" })), aides: aides.map(a => ({ ...a, state: "" })), depots: depots.map(d => ({ ...d, state: "" })), time: Date.now() });
       current.updated = Date.now();
       Hub.call("credits").then(o => { if (o.credits) credits(o.credits); }).catch(() => {});
     } catch (e) {
       if (e.name !== "AbortError") notice(e.message, true);
       else if (liveText.trim()) current.messages.push({ id: uid(), role: "assistant", text: liveText.trim() + "\n\n*(interrompu)*", sources, searches: [], steps, proposals: [], aides: [], depots: [], time: Date.now() });
     } finally {
-      clearTimeout(liveTimer); liveTimer = 0; liveText = ""; busy = false; abort = null; liveSteps = []; persist(); drawList(); drawThread(); updateSend();
+      clearTimeout(liveTimer); liveTimer = 0; liveText = ""; clearInterval(chrono); debutReponse = 0; busy = false; abort = null; liveSteps = []; persist(); drawList(); drawThread(); updateSend();
       const last = current.messages[current.messages.length - 1];
       if (last && last.role !== "user") { const a = parse(last.text).filter(s => s.t === "art").pop(); if (a) openArt(current, a.id, versionsOf(current, a.id).length - 1); }
     }
@@ -958,6 +967,7 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
 
   async function ask() {
     if (rapideOk) return askRapide();
+    debutReponse = Date.now(); clearInterval(chrono); chrono = setInterval(updateLive, 1000);
     busy = true; abort = new AbortController(); startPoll(); updateSend(); drawThread(); notice();
     try {
       const msgs = await history(), apps = GA.names(), reprise = [], acc = { proposals: [], aides: [], depots: [], steps: [], sources: [], searches: [] }; let out;
@@ -981,12 +991,12 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
         rid = uid();
       }
       out = { ...out, steps: acc.steps.concat(out.steps || []), proposals: acc.proposals.concat(out.proposals || []), aides: acc.aides.concat(out.aides || []), depots: acc.depots.concat(out.depots || []), sources: (out.sources || []).length ? out.sources : acc.sources, searches: acc.searches.concat(out.searches || []) };
-      current.messages.push({ id: uid(), role: "assistant", text: String(out.text || ""), sources: out.sources || [], searches: out.searches || [], steps: out.steps || [], degrade: out.degrade ? out.degrade.raison : "", proposals: (out.proposals || []).map(p => ({ ...p, state: "" })), aides: (out.aides || []).map(a => ({ ...a, state: "" })), depots: (out.depots || []).map(d => ({ ...d, state: "" })), time: Date.now() });
+      current.messages.push({ id: uid(), role: "assistant", duree: (Date.now() - debutReponse) / 1000, text: String(out.text || ""), sources: out.sources || [], searches: out.searches || [], steps: out.steps || [], degrade: out.degrade ? out.degrade.raison : "", proposals: (out.proposals || []).map(p => ({ ...p, state: "" })), aides: (out.aides || []).map(a => ({ ...a, state: "" })), depots: (out.depots || []).map(d => ({ ...d, state: "" })), time: Date.now() });
       if (out.credits) credits(out.credits);
       current.updated = Date.now();
     } catch (e) { if (e.name !== "AbortError") notice(e.message, true); }
     finally {
-      clearInterval(pollTimer); busy = false; abort = null; liveSteps = []; persist(); drawList(); drawThread(); updateSend();
+      clearInterval(pollTimer); clearInterval(chrono); debutReponse = 0; busy = false; abort = null; liveSteps = []; persist(); drawList(); drawThread(); updateSend();
       const last = current.messages[current.messages.length - 1];
       if (last && last.role !== "user") { const a = parse(last.text).filter(s => s.t === "art").pop(); if (a) openArt(current, a.id, versionsOf(current, a.id).length - 1); }
     }
