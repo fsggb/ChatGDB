@@ -262,3 +262,7 @@ dialog.wide{width:min(900px,calc(100% - 32px))}.status{min-height:18px;margin:0 
 .msg.bot .body:has(> .typing:only-child){padding:8px 12px}
 .msg .meta{display:block;align-self:flex-end;margin-top:4px;font-size:11.5px;color:var(--mute);text-align:right;white-space:nowrap}
 .msg.bot .meta{text-align:left}
+
+/* Carte du document de travail d'une application (Excel…) gardé dans la conversation */
+.afc.fich{display:flex;align-items:center;gap:12px;flex-wrap:wrap;cursor:default;margin-top:10px}
+.afc.fich .fich-actions{margin-left:auto;display:flex;gap:6px}.afc.fich .btn{padding:5px 12px;font-size:13px}

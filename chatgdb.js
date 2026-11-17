@@ -445,7 +445,17 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
     (m.proposals || []).forEach(p => body.append(proposalCard(p, m)));
     (m.aides || []).forEach(a => body.append(aideCard(a, m, conv)));
     (m.depots || []).forEach(d => body.append(depotCard(d, m, conv)));
+    (m.fichiers || []).forEach(f => body.append(fichierCard(f, conv)));
     return body;
+  }
+  // Document de travail d'une application, gardé dans la conversation : rouvrable et téléchargeable à tout moment
+  function fichierCard(f, conv) {
+    const card = el("div", { className: "afc fich" }, el("span", { className: "ico", innerHTML: ic(f.appli === "gridcraft" ? "table" : "file") }),
+      el("span", {}, el("b", { textContent: f.name }), el("small", { textContent: f.app + " · enregistré dans la conversation" + (f.taille ? " · " + Math.max(1, Math.round(f.taille / 1024)) + " Ko" : "") })));
+    const b1 = el("button", { className: "btn", type: "button", textContent: "Ouvrir" }), b2 = el("button", { className: "btn", type: "button", textContent: "Télécharger" });
+    b1.onclick = async () => { GA.setConv(conv.id, stockDocs); b1.disabled = true; b1.textContent = "Ouverture…"; const ok = await GA.rouvrir(f, { mount: mountLive, unmount: closeArt }).catch(() => false); b1.disabled = false; b1.textContent = "Ouvrir"; if (!ok) toast("Impossible de rouvrir ce fichier : essayez « Télécharger »."); };
+    b2.onclick = async () => { GA.setConv(conv.id, stockDocs); if (!(await GA.telecharger(f).catch(() => false))) toast("Fichier introuvable sur cet appareil."); };
+    card.append(el("span", { className: "fich-actions" }, b1, b2)); return card;
   }
   function drawThread(scroll = true) {
     const th = $("thread"); th.textContent = "";
@@ -897,6 +907,10 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
     return msg;
   }
   async function askRapide() {
+    GA.setConv(current.id, stockDocs); GA.remettre && GA.remettre();
+    // modifications faites à la main dans l'application depuis la dernière réponse : on les garde avant de continuer
+    if (GA.pret && GA.pret() && GA.sale && GA.sale()) await avecDelai(GA.sauverDoc().catch(() => null), 9000);
+    const idMsg = uid();
     debutReponse = Date.now(); clearInterval(chrono); chrono = setInterval(() => { if (!liveText) updateLive(); }, 1000);
     busy = true; abort = new AbortController(); liveText = ""; liveSteps = baseSteps = []; updateSend(); drawThread(); notice();
     const steps = [], sources = [], vus = {}, props = [], aides = [], depots = [], urlsVues = {}, pas = t => { steps.push(t); liveSteps = steps.slice(); updateLive(); };
@@ -912,7 +926,7 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
         // Presque au bout des étapes : on demande la réponse finale, sans outils, pour que la réponse ne manque jamais
         const dernier = tour >= NB_TOURS - 2, lastMsg = messages[messages.length - 1];
         if (dernier && tour === NB_TOURS - 2 && lastMsg && lastMsg.role === "user" && Array.isArray(lastMsg.content)) lastMsg.content.push({ type: "text", text: "Tu as atteint le nombre maximal d’étapes. Donne maintenant ta réponse finale à la personne : ce qui est fait, ce qui reste à faire, et ce qu’elle peut faire elle-même pour finir." });
-        const corps = { model: conf.modele, max_tokens: Math.max(conf.jetons || 0, 12000), stream: true, system: [{ type: "text", text: conf.systeme[0], cache_control: { type: "ephemeral" } }, { type: "text", text: conf.systeme[1] + (apps.length && GA.consignes ? "\n\n" + GA.consignes() : "") }], messages, tools: outils, output_config: { effort: prefs.effort || "low" } };
+        const corps = { model: conf.modele, max_tokens: Math.max(conf.jetons || 0, 12000), stream: true, system: [{ type: "text", text: conf.systeme[0], cache_control: { type: "ephemeral" } }, { type: "text", text: conf.systeme[1] + (apps.length && GA.consignes ? "\n\n" + GA.consignes() : "") + (fichiersConv(current).length ? "\n\nFICHIERS DE CETTE CONVERSATION (enregistrés ; rechargés automatiquement quand tu ouvres l'application) : " + fichiersConv(current).map(f => f.app + " : « " + f.name + " »").join(" ; ") + ". Continue sur ce fichier, ne le recrée pas, sauf demande contraire." : "") }], messages, tools: outils, output_config: { effort: prefs.effort || "low" } };
         if ((prefs.effort && prefs.effort !== "low") || prefs.profondeur === "approfondie") corps.thinking = { type: "adaptive" };
         if (dernier) corps.tool_choice = { type: "none" };
         // Relais (la clé reste chez lui, le navigateur n'a qu'un jeton signé) ou, à défaut, clé dédiée de l'administrateur
@@ -975,14 +989,16 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
         if (liveText && !/\n$/.test(liveText)) liveText += "\n\n";
       }
       if (!texte.trim()) texte = "*ChatGDB n’a pas rédigé de réponse. Réessayez ou reformulez la demande.*";
-      current.messages.push({ id: uid(), role: "assistant", duree: (Date.now() - debutReponse) / 1000, text: texte.trim(), sources, searches: [], steps, degrade: "", proposals: props.map(p => ({ ...p, state: "" })), aides: aides.map(a => ({ ...a, state: "" })), depots: depots.map(d => ({ ...d, state: "" })), time: Date.now() });
+      let fichiers = []; if (GA.pret && GA.pret() && ((GA.aTouche && GA.aTouche()) || (GA.sale && GA.sale()))) { const f = await avecDelai(GA.sauverDoc(idMsg).catch(() => null), 9000); if (f) fichiers = [f]; }
+      current.messages.push({ id: idMsg, fichiers, role: "assistant", duree: (Date.now() - debutReponse) / 1000, text: texte.trim(), sources, searches: [], steps, degrade: "", proposals: props.map(p => ({ ...p, state: "" })), aides: aides.map(a => ({ ...a, state: "" })), depots: depots.map(d => ({ ...d, state: "" })), time: Date.now() });
       current.updated = Date.now();
       Hub.call("credits").then(o => { if (o.credits) credits(o.credits); }).catch(() => {});
     } catch (e) {
       // Ce qui a déjà été écrit est conservé (rien n'est perdu) ; la raison est indiquée dans la conversation
       const abandon = e.name === "AbortError";
       if (!abandon) notice(e.message, true);
-      if (liveText.trim()) current.messages.push({ id: uid(), role: "assistant", duree: (Date.now() - debutReponse) / 1000, text: liveText.trim() + "\n\n*(" + (abandon ? "arrêté" : "réponse interrompue : " + String(e.message || "erreur").slice(0, 160)) + ")*", sources, searches: [], steps, proposals: [], aides: [], depots: [], time: Date.now() });
+      let fichiers = []; try { if (GA.pret && GA.pret() && GA.aTouche && GA.aTouche()) { const f = await avecDelai(GA.sauverDoc(idMsg).catch(() => null), 9000); if (f) fichiers = [f]; } } catch { /* ignoré */ }
+      if (liveText.trim() || fichiers.length) current.messages.push({ id: idMsg, fichiers, role: "assistant", duree: (Date.now() - debutReponse) / 1000, text: (liveText.trim() ? liveText.trim() + "\n\n" : "") + "*(" + (abandon ? "arrêté" : "réponse interrompue : " + String(e.message || "erreur").slice(0, 160)) + ")*", sources, searches: [], steps, proposals: [], aides: [], depots: [], time: Date.now() });
       else if (!abandon) current.messages.push({ id: uid(), role: "assistant", text: "*ChatGDB n’a pas pu répondre : " + String(e.message || "erreur").slice(0, 200) + "*", sources: [], searches: [], steps, proposals: [], aides: [], depots: [], time: Date.now() });
     } finally {
       clearTimeout(liveTimer); liveTimer = 0; liveText = ""; clearInterval(chrono); debutReponse = 0; busy = false; abort = null; liveSteps = []; persist(); drawList(); drawThread(); updateSend();
@@ -990,6 +1006,14 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
       if (last && last.role !== "user") { const a = parse(last.text).filter(s => s.t === "art").pop(); if (a) openArt(current, a.id, versionsOf(current, a.id).length - 1); }
     }
   }
+  // Le document de travail d'une application (Excel…) est enregistré dans la conversation : stockage fourni à l'application
+  const stockDocs = { lire: k => idb.get(k), ecrire: rec => idb.put(rec) };
+  // Fichiers déjà enregistrés dans cette conversation (le plus récent par application), rappelés à l'IA
+  function fichiersConv(conv) {
+    const vus = new Map(); [...conv.messages].reverse().forEach(m => (m.fichiers || []).forEach(f => { if (!vus.has(f.appli)) vus.set(f.appli, f); }));
+    return [...vus.values()];
+  }
+  const avecDelai = (p, ms) => Promise.race([p, new Promise(r => setTimeout(() => r(null), ms))]);
   // Étiquettes des étapes pour les outils exécutés par le serveur
   const ETIQ_OUTILS = {
     chercher_memoire: e => "Mémoire : " + (e.requete || ""), lire_memoire: e => "Lecture d’une note de mémoire",
