@@ -100,7 +100,9 @@
     if (last < (text || "").length) segs.push({ t: "text", v: text.slice(last) });
     return segs;
   }
-  const versionsOf = (conv, id) => { const v = []; conv.messages.forEach(m => { if (m.role !== "user") parse(m.text).forEach(s => { if (s.t === "art" && s.id === id) { s.msg = m; v.push(s); } }); }); return v; };
+  // Versions d'un artefact : celles écrites par ChatGDB, puis celles modifiées par la personne (rangées dans m.edits)
+  const versionsOf = (conv, id) => { const v = []; conv.messages.forEach(m => { if (m.role !== "user") { parse(m.text).forEach(s => { if (s.t === "art" && s.id === id) { s.msg = m; v.push(s); } }); (m.edits || []).forEach(e => { if (e.id === id) v.push({ ...e, t: "art", msg: m, edited: true }); }); } }); return v; };
+  const artTag = a => `<artifact id="${a.id}" type="${a.type}" title="${String(a.title).replace(/"/g, "'")}"${a.lang ? ` lang="${a.lang}"` : ""}>\n${a.content}\n</artifact>`;
 
   // ---------- conversation d'exemple (non stockée, lecture seule) ----------
   const EXAMPLE = { id: "exemple", title: "Exemple : préparer un week-end de troupe", example: true, updated: Infinity, messages: [
@@ -612,11 +614,13 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
     $("art-ico").innerHTML = `<use href="#i-${k.ico}"/>`; $("art-name").textContent = a.title; $("art-kind").textContent = k.label;
     $("art-lib").hidden = !(isAdmin && biblioApi && !conv.example);
     const sel = $("art-ver"); sel.hidden = vers.length < 2; sel.textContent = "";
-    vers.forEach((_, i) => sel.append(el("option", { value: i, textContent: "Version " + (i + 1), selected: i === openArtVer })));
-    $("tab-prev").setAttribute("aria-selected", String(tab === "prev")); $("tab-code").setAttribute("aria-selected", String(tab === "code"));
+    vers.forEach((v, i) => sel.append(el("option", { value: i, textContent: "Version " + (i + 1) + (v.edited ? " (modifiée)" : ""), selected: i === openArtVer })));
+    $("tab-prev").setAttribute("aria-selected", String(tab === "prev")); $("tab-code").setAttribute("aria-selected", String(tab === "code")); $("tab-edit").setAttribute("aria-selected", String(tab === "edit"));
+    $("tab-edit").hidden = a.type === "app" || !!conv.example;
     $("tab-prev").parentElement.hidden = false;
     const body = $("art-body"); body.textContent = "";
     if (tab === "code") { body.append(el("pre", { className: "raw", textContent: a.content })); return; }
+    if (tab === "edit" && a.type !== "app" && !conv.example) { body.append(editeurArt(conv, a)); return; }
     if (a.type === "markdown") { curSources = []; body.append(el("div", { className: "md", innerHTML: md(a.content) })); }
     else if (a.type === "app") {
       const u = GA.urlOf && GA.urlOf(GA.parseSpec(a.content));
@@ -632,7 +636,52 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
       body.append(el("div", { className: "md", innerHTML: "<table><thead><tr>" + (rows[0] || []).map(c => `<th>${esc(c)}</th>`).join("") + "</tr></thead><tbody>" + rows.slice(1).map(r => "<tr>" + r.map(c => `<td>${esc(c)}</td>`).join("") + "</tr>").join("") + "</tbody></table>" }));
     } else body.append(el("pre", { className: "raw", textContent: a.content }));
   }
-  $("tab-prev").onclick = () => { tab = "prev"; renderArt(); }; $("tab-code").onclick = () => { tab = "code"; renderArt(); };
+  // ---------- édition d'un artefact : source à gauche (ou en haut), aperçu mis à jour en direct ----------
+  const CSP_ART = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data: blob: https:; style-src \'unsafe-inline\'; font-src data:; form-action \'none\'; base-uri \'none\'">';
+  function apercuArt(type, content) {
+    if (type === "markdown") { curSources = []; return el("div", { className: "md", innerHTML: md(content) }); }
+    if (type === "html") return el("iframe", { title: "Aperçu", sandbox: "allow-scripts", srcdoc: CSP_ART.replace("default-src 'none';", "default-src 'none'; script-src 'unsafe-inline';") + content, referrerPolicy: "no-referrer" });
+    if (type === "svg") return el("div", { className: "svgwrap" }, el("img", { alt: "", src: "data:image/svg+xml;charset=utf-8," + encodeURIComponent(content) }));
+    if (type === "csv") { const rows = content.split(/\r?\n/).filter(Boolean).map(l => l.split(/[,;](?=(?:[^"]*"[^"]*")*[^"]*$)/).map(c => c.replace(/^"|"$/g, "").replace(/""/g, '"'))); return el("div", { className: "md", innerHTML: "<table><thead><tr>" + (rows[0] || []).map(c => `<th>${esc(c)}</th>`).join("") + "</tr></thead><tbody>" + rows.slice(1).map(r => "<tr>" + r.map(c => `<td>${esc(c)}</td>`).join("") + "</tr>").join("") + "</tbody></table>" }); }
+    return null;   // code : pas d'aperçu
+  }
+  function editeurArt(conv, a) {
+    const box = el("div", { className: "art-edit" + (a.type === "code" ? " seul" : "") });
+    const ta = el("textarea", { className: "art-src", value: a.content, spellcheck: a.type === "markdown", ariaLabel: "Contenu de l’artefact" });
+    const prev = el("div", { className: "art-prev" }), etat = el("span", { className: "muted", textContent: "" });
+    let visuel = false, timer = 0;
+    const majApercu = () => { if (visuel) return; prev.textContent = ""; const n = apercuArt(a.type, ta.value); if (n) prev.append(n); };
+    ta.addEventListener("input", () => { etat.textContent = "Modifications non enregistrées"; clearTimeout(timer); timer = setTimeout(majApercu, a.type === "html" ? 500 : 150); });
+    ta.addEventListener("keydown", e => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); enregistrer(); }
+      else if (e.key === "Tab" && !e.shiftKey) { e.preventDefault(); const p = ta.selectionStart; ta.setRangeText("  ", p, ta.selectionEnd, "end"); ta.dispatchEvent(new Event("input")); }
+    });
+    // Pages HTML : modification directe du texte dans l'aperçu (sans exécuter les scripts de la page)
+    const bVisuel = el("button", { className: "btn", type: "button", textContent: "Modifier dans l’aperçu", hidden: a.type !== "html", title: "Cliquez dans la page pour changer ses textes ; le code se met à jour" });
+    bVisuel.onclick = () => {
+      if (!visuel) {
+        visuel = true; bVisuel.textContent = "Revenir au code"; prev.textContent = "";
+        const f = el("iframe", { title: "Page modifiable", sandbox: "allow-same-origin", srcdoc: CSP_ART + ta.value, referrerPolicy: "no-referrer" });
+        f.onload = () => { try { const d = f.contentDocument; d.designMode = "on"; d.addEventListener("input", () => { const clone = d.documentElement.cloneNode(true); clone.querySelectorAll('meta[http-equiv="Content-Security-Policy"]').forEach(x => x.remove()); ta.value = "<!doctype html>\n" + clone.outerHTML; etat.textContent = "Modifications non enregistrées"; }); } catch { etat.textContent = "Modification directe impossible pour cette page."; } };
+        prev.append(f);
+      } else { visuel = false; bVisuel.textContent = "Modifier dans l’aperçu"; majApercu(); }
+    };
+    const annuler = el("button", { className: "btn", type: "button", textContent: "Annuler" });
+    annuler.onclick = () => { tab = "prev"; renderArt(conv); };
+    const ok = el("button", { className: "btn primary", type: "button", textContent: "Enregistrer" , title: "Enregistrer comme nouvelle version (Ctrl+S)" });
+    function enregistrer() {
+      const texte = ta.value.replace(/\s+$/, ""); if (texte === a.content) { etat.textContent = "Aucune modification."; return; }
+      // la nouvelle version est rangée dans la dernière réponse de ChatGDB : il la verra à la prochaine question
+      const m = [...conv.messages].reverse().find(x => x.role !== "user"); if (!m) return;
+      (m.edits ||= []).push({ id: a.id, type: a.type, title: a.title, lang: a.lang || "", content: texte, time: Date.now() });
+      conv.updated = Date.now(); persist(); openArtVer = versionsOf(conv, a.id).length - 1; tab = "prev"; renderArt(conv); toast("Nouvelle version enregistrée : ChatGDB en tiendra compte.");
+    }
+    ok.onclick = enregistrer;
+    box.append(el("div", { className: "art-edit-bar" }, etat, el("span", { style: "flex:1" }), bVisuel, annuler, ok), el("div", { className: "art-edit-zone" }, ta, prev));
+    majApercu(); setTimeout(() => ta.focus(), 0);
+    return box;
+  }
+  $("tab-prev").onclick = () => { tab = "prev"; renderArt(); }; $("tab-code").onclick = () => { tab = "code"; renderArt(); }; $("tab-edit").onclick = () => { tab = "edit"; renderArt(); };
   $("art-ver").onchange = e => { openArtVer = +e.target.value; renderArt(); };
   $("art-close").onclick = () => { closeArt(); drawThread(false); };
   $("art-full").onclick = () => $("art").classList.toggle("full");
@@ -749,7 +798,7 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
   async function history() {
     const list = current.messages.slice(-24), out = []; let imgBudget = 8, pdfDone = false, lastUser = -1; list.forEach((m, i) => { if (m.role === "user") lastUser = i; });
     for (let i = list.length - 1; i >= 0; i--) {
-      const m = list[i]; if (m.role !== "user") { out.push({ role: "assistant", text: m.text }); continue; }
+      const m = list[i]; if (m.role !== "user") { out.push({ role: "assistant", text: m.text + (m.edits || []).map(e => "\n\n[Version modifiée par la personne : c'est désormais la version de référence]\n" + artTag(e)).join("") }); continue; }
       const o = { role: "user", text: m.text }, images = [], docs = [], notes = [];
       for (let j = 0; j < (m.atts || []).length; j++) {
         const a = m.atts[j], rec = await idb.get(fkey(current.id, m.id, j));
