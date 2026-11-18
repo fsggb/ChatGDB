@@ -1,1 +1,4 @@
 .DS_Store
+# générés par scripts/connaissances.mjs (au déploiement)
+connaissances/index.json
+connaissances/fiches/

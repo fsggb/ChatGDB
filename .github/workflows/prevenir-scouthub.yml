@@ -1,0 +1,23 @@
+name: Réveiller ScoutHub
+
+# Dès qu'ChatGDB change (assistant ou base de connaissances), le site ScoutHub est redéployé tout de suite, sans attendre la
+# vérification toutes les 15 minutes. Il faut pour cela un secret SCOUTHUB_TOKEN dans ce dépôt (jeton à portée limitée au
+# dépôt fsggb/ScoutHub, droit « Actions : lecture et écriture »). Sans secret, cette étape ne fait rien : la vérification
+# régulière de ScoutHub prend le relais.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  reveiller:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Lancer le déploiement de ScoutHub
+        env:
+          GH_TOKEN: ${{ secrets.SCOUTHUB_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then echo "Pas de secret SCOUTHUB_TOKEN : ScoutHub se mettra à jour à sa prochaine vérification (15 min)."; exit 0; fi
+          gh workflow run pages.yml --repo fsggb/ScoutHub --ref main

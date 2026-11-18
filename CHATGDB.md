@@ -1,5 +1,5 @@
 ---
-# Fiche de connaissances ChatGDB (format : ScoutHub/docs/projet-chatgdb.md, §5).
+# Fiche de connaissances ChatGDB (format : ChatGDB/docs/projet-chatgdb.md, §5).
 depot: fsggb/ChatGDB
 maj: 2026-11-10
 ---

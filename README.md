@@ -10,3 +10,9 @@ ChatGDB est l'assistant IA de la fédération FSGGB : une application pleine pag
 Ouvrir `index.html` par un petit serveur local ne suffit pas (les fichiers de ScoutHub sont chargés par `/ScoutHub/...`) : le plus simple est de pousser sur ce dépôt et de regarder le résultat dans ScoutHub après la synchronisation, ou de lancer un serveur local qui sert ScoutHub sous `/ScoutHub/` et ce dépôt sous `/ChatGDB/`.
 
 Le format des artefacts (`<artifact id="" type="markdown|html|svg|csv|code" title="">`) et les crédits sont décrits dans `ScoutHub/docs/projet-chatgdb.md`.
+
+## Base de connaissances
+
+Les fiches de l'assistant sont ici : `connaissances/src/<thème>/<fiche>.md` (format : `connaissances/FORMAT.md`). `node scripts/connaissances.mjs --verifier`
+en tire la carte `connaissances/index.json` et les fiches `connaissances/fiches/*.json` (fichiers générés, non versionnés). Ils sont publiés avec ChatGDB
+(`/ChatGDB/connaissances/`), seul ou assemblé dans ScoutHub. `connaissances/depots.txt` liste les dépôts dont la fiche `CHATGDB.md` est réunie dans `knowledge/all.md`.
