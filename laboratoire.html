@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#000761">
+  <title>Laboratoire ChatGDB</title>
+  <link rel="icon" type="image/png" href="assets/ChatGDB.png">
+  <link rel="stylesheet" href="laboratoire.css?v=1">
+</head>
+<body>
+<header class="haut">
+  <div>
+    <h1>Laboratoire</h1>
+    <p class="mu">Essais de modèles, de dictée, de voix et de recherche. Réservé à l’administrateur.</p>
+  </div>
+  <div class="budget" id="budget" aria-live="polite">
+    <span id="budget-txt">Budget du jour…</span>
+    <div class="jauge" role="img" aria-label="Neurons utilisés aujourd’hui"><i id="budget-barre"></i></div>
+  </div>
+</header>
+
+<nav class="onglets" id="onglets" role="tablist" aria-label="Sections du laboratoire">
+  <button role="tab" data-onglet="comparer" aria-selected="true">Comparer</button>
+  <button role="tab" data-onglet="dictee" aria-selected="false">Dictée</button>
+  <button role="tab" data-onglet="voix" aria-selected="false">Voix</button>
+  <button role="tab" data-onglet="recherche" aria-selected="false">Recherche</button>
+  <button role="tab" data-onglet="budget" aria-selected="false">Budget</button>
+  <button role="tab" data-onglet="outils" aria-selected="false">Outils</button>
+  <button role="tab" data-onglet="journal" aria-selected="false">Journal</button>
+</nav>
+
+<main>
+  <p id="etat" class="etat" role="status"></p>
+
+  <!-- COMPARER -->
+  <section id="p-comparer" class="panneau">
+    <h2>Comparer des modèles</h2>
+    <p class="mu">La même question posée à plusieurs modèles, avec le temps, les jetons et le coût. Les modèles gratuits consomment le budget de Neurons du jour (commun à tout le compte) ; Claude consomme vos crédits.</p>
+    <label for="c-systeme">Consigne système (facultative)</label>
+    <textarea id="c-systeme" rows="2" placeholder="Tu es ChatGDB, l’assistant de la fédération. Réponds en français, de façon courte et exacte."></textarea>
+    <label for="c-q">Question</label>
+    <textarea id="c-q" rows="4" placeholder="Ex. Jusqu’à quelle profondeur entailler un mi-bois ?"></textarea>
+    <div class="ligne">
+      <label>Température <input id="c-temp" type="number" min="0" max="2" step="0.1" value="0"></label>
+      <label>Jetons de réponse au plus <input id="c-max" type="number" min="16" max="8000" step="50" value="800"></label>
+      <label class="case"><input id="c-force" type="checkbox"> Forcer même au-delà de 80 % du budget</label>
+    </div>
+    <fieldset>
+      <legend>Modèles</legend>
+      <div class="raccourcis">
+        <button type="button" data-lot="claude">Claude</button>
+        <button type="button" data-lot="rapides">Gratuits rapides</button>
+        <button type="button" data-lot="tous">Tous les gratuits</button>
+        <button type="button" data-lot="aucun">Aucun</button>
+      </div>
+      <div id="c-modeles" class="modeles"></div>
+    </fieldset>
+    <div class="ligne"><button type="button" id="c-lancer" class="primaire">Lancer la comparaison</button><span id="c-estim" class="mu"></span></div>
+    <div id="c-resultats" class="resultats"></div>
+  </section>
+
+  <!-- DICTÉE -->
+  <section id="p-dictee" class="panneau" hidden>
+    <h2>Dictée vocale</h2>
+    <p class="mu">Parlez : l’enregistrement est transcrit par Whisper (Cloudflare) et, en parallèle, par la dictée du navigateur, pour comparer la qualité et la vitesse. L’audio n’est conservé nulle part.</p>
+    <div class="ligne">
+      <button type="button" id="d-enreg" class="primaire">Enregistrer</button>
+      <button type="button" id="d-stop" disabled>Arrêter et transcrire</button>
+      <label class="fichier">ou un fichier audio <input id="d-fichier" type="file" accept="audio/*"></label>
+      <span id="d-duree" class="mu" aria-live="polite"></span>
+    </div>
+    <div class="deux">
+      <div class="carte"><h3>Whisper (Cloudflare)</h3><p id="d-w-meta" class="mu">—</p><p id="d-w-texte" class="texte"></p></div>
+      <div class="carte"><h3>Navigateur</h3><p id="d-n-meta" class="mu">—</p><p id="d-n-texte" class="texte"></p></div>
+    </div>
+  </section>
+
+  <!-- VOIX -->
+  <section id="p-voix" class="panneau" hidden>
+    <h2>Lecture à voix haute</h2>
+    <p class="mu">MeloTTS (Cloudflare) lit le texte en français. 2 000 caractères au plus par essai.</p>
+    <label for="v-texte">Texte</label>
+    <textarea id="v-texte" rows="4">Bonjour, je suis ChatGDB, l’assistant de la fédération. Prêt pour un nouveau camp !</textarea>
+    <div class="ligne"><button type="button" id="v-lancer" class="primaire">Lire</button><span id="v-meta" class="mu"></span></div>
+    <audio id="v-audio" controls hidden></audio>
+  </section>
+
+  <!-- RECHERCHE -->
+  <section id="p-recherche" class="panneau" hidden>
+    <h2>Recherche dans la base de connaissances</h2>
+    <p class="mu">Compare la recherche par mots-clés de ChatGDB à la recherche par le sens (bge-m3) et à leur combinaison. L’indexation des fiches (titre, résumé, mots-clés) se fait une fois et reste dans ce navigateur.</p>
+    <div class="ligne"><button type="button" id="r-indexer">Indexer les fiches</button><span id="r-etat" class="mu"></span></div>
+    <label for="r-q">Question</label>
+    <div class="ligne"><input id="r-q" type="search" placeholder="Ex. mon couteau ne coupe plus, que faire ?"><button type="button" id="r-lancer" class="primaire">Chercher</button></div>
+    <div class="trois" id="r-resultats"></div>
+  </section>
+
+  <!-- BUDGET -->
+  <section id="p-budget" class="panneau" hidden>
+    <h2>Budget de Neurons</h2>
+    <p class="mu">10 000 Neurons par jour pour tout le compte Cloudflare (remise à zéro à 00 h UTC). Au-delà de 80 %, les essais sont refusés sauf demande de forcer.</p>
+    <div id="b-etat" class="carte"></div>
+    <h3>Coût par million de jetons (Neurons)</h3>
+    <div class="tableau"><table><thead><tr><th>Modèle</th><th class="n">Lecture</th><th class="n">Écriture</th></tr></thead><tbody id="b-tarifs"></tbody></table></div>
+  </section>
+
+  <!-- OUTILS -->
+  <section id="p-outils" class="panneau" hidden>
+    <h2>Boîte à outils de développement</h2>
+    <p class="mu">Commandes à lancer sur le poste de développement (PowerShell). Elles installent des outils qui économisent des jetons et améliorent le travail de Claude Code.</p>
+    <div class="alerte"><b>À lire avant d’installer.</b> Les « skills » du point 3 viennent de dépôts GitHub de particuliers et Claude suit leurs instructions à la lettre : lisez leur contenu (fichier <code>SKILL.md</code>) avant de les installer.</div>
+    <div id="o-liste"></div>
+  </section>
+
+  <!-- JOURNAL -->
+  <section id="p-journal" class="panneau" hidden>
+    <h2>Journal des essais</h2>
+    <p class="mu">Les 50 derniers essais de ce navigateur (rien n’est envoyé ailleurs).</p>
+    <div class="ligne"><button type="button" id="j-export">Copier en JSON</button><button type="button" id="j-vider">Vider</button></div>
+    <div id="j-liste"></div>
+  </section>
+
+  <details class="machine">
+    <summary>Résultats lisibles par ChatGDB</summary>
+    <pre id="resultats-json" data-role="machine">{}</pre>
+  </details>
+</main>
+
+<script src="/ScoutHub/config.js"></script>
+<script src="/ScoutHub/common.js"></script>
+<script src="laboratoire.js?v=1"></script>
+</body>
+</html>
