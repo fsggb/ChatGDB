@@ -46,6 +46,7 @@
     <div class="ligne">
       <label>Température <input id="c-temp" type="number" min="0" max="2" step="0.1" value="0"></label>
       <label>Jetons de réponse au plus <input id="c-max" type="number" min="16" max="8000" step="50" value="800"></label>
+      <label class="case"><input id="c-fiches" type="checkbox" checked> Donner accès aux fiches de la base de connaissances</label>
       <label class="case"><input id="c-force" type="checkbox"> Forcer même au-delà de 80 % du budget</label>
     </div>
     <fieldset>
@@ -64,17 +65,18 @@
 
   <!-- DICTÉE -->
   <section id="p-dictee" class="panneau" hidden>
-    <h2>Dictée vocale</h2>
-    <p class="mu">Parlez : l’enregistrement est transcrit par Whisper (Cloudflare) et, en parallèle, par la dictée du navigateur, pour comparer la qualité et la vitesse. L’audio n’est conservé nulle part.</p>
+    <h2>Dictée vocale en direct</h2>
+    <p class="mu">Appuyez une seule fois sur « Démarrer » et parlez : le texte s’écrit au fil de la parole, phrase après phrase (Whisper, Cloudflare), sans rien envoyer ni valider. La dictée du navigateur tourne en parallèle pour comparer le délai et la qualité. L’audio n’est conservé nulle part.</p>
     <div class="ligne">
-      <button type="button" id="d-enreg" class="primaire">Enregistrer</button>
-      <button type="button" id="d-stop" disabled>Arrêter et transcrire</button>
+      <button type="button" id="d-enreg" class="primaire">Démarrer la dictée</button>
+      <button type="button" id="d-stop" disabled>Arrêter</button>
+      <button type="button" id="d-copier">Copier le texte</button>
       <label class="fichier">ou un fichier audio <input id="d-fichier" type="file" accept="audio/*"></label>
       <span id="d-duree" class="mu" aria-live="polite"></span>
     </div>
     <div class="deux">
-      <div class="carte"><h3>Whisper (Cloudflare)</h3><p id="d-w-meta" class="mu">—</p><p id="d-w-texte" class="texte"></p></div>
-      <div class="carte"><h3>Navigateur</h3><p id="d-n-meta" class="mu">—</p><p id="d-n-texte" class="texte"></p></div>
+      <div class="carte"><h3>Whisper (Cloudflare)</h3><p id="d-w-meta" class="mu">—</p><p id="d-w-texte" class="texte" aria-live="polite"></p></div>
+      <div class="carte"><h3>Navigateur</h3><p id="d-n-meta" class="mu">—</p><p id="d-n-texte" class="texte" aria-live="polite"></p></div>
     </div>
   </section>
 
@@ -139,7 +141,7 @@
 
 <script src="/ScoutHub/config.js"></script>
 <script src="/ScoutHub/common.js"></script>
-<script src="laboratoire.js?v=3"></script>
+<script src="laboratoire.js?v=4"></script>
 <script src="panneau.js" data-contexte="laboratoire"></script>
 </body>
 </html>

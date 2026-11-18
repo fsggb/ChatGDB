@@ -9,7 +9,7 @@
   const arrondi = (n, d = 1) => Math.round(n * 10 ** d) / 10 ** d;
   let CLAUDE = [["claude-haiku-5-5", "Claude Haiku 5.5", 0.10, 0.50], ["claude-sonnet-5-5", "Claude Sonnet 5.5", 2, 10], ["claude-opus-5-5", "Claude Opus 5.5", 4, 20]];
   const RAPIDES = ["llama-3.1-8b", "qwen3-30b", "gpt-oss-20b", "granite", "gemma-4"];
-  const PARAMETRES = "onglet, q (question), systeme, modeles (liste séparée par des virgules : morceaux de nom, « claude », « rapides » ou « tous »), temp, max, force=1, lancer=1 ; voix : texte ; recherche : r (question)";
+  const PARAMETRES = "onglet, q (question), systeme, fiches=0 (sans les fiches de la base, fournies par défaut), modeles (liste séparée par des virgules : morceaux de nom, « claude », « rapides » ou « tous »), temp, max, force=1, lancer=1 ; voix : texte ; recherche : r (question)";
 
   // ---------- connexion ----------
   { const connu = Hub.cachedUser(); if (connu) Hub.renderBar && Hub.renderBar(connu); }
@@ -129,7 +129,12 @@
       const c = CLAUDE.find(x => x[0] === id) || null, m = catalogue.find(x => x.id === id);
       const k = carte((c ? c[1] : m ? m.nom : id)); zone.append(k); return { id, claude: !!c, k };
     });
-    const systeme = String(o.systeme || "").trim(), temp = +o.temp || 0, max = +o.max || 800;
+    let systeme = String(o.systeme || "").trim(); const temp = +o.temp || 0, max = +o.max || 800;
+    let fichesDonnees = [];
+    if (o.fiches !== false) {
+      try { const f = await fichesPour(q); if (f.ids.length) { systeme = (systeme ? systeme + "\n\n" : "") + f.texte; fichesDonnees = f.ids; } } catch { /* base indisponible : comparaison sans fiches */ }
+      zone.prepend(el("p", { className: "mu", textContent: fichesDonnees.length ? "Fiches fournies à tous les modèles : " + fichesDonnees.join(", ") : "Aucune fiche pertinente trouvée pour cette question." }));
+    }
     const sorties = await Promise.all(cible.map(async ({ id, claude: estClaude, k }) => {
       try {
         let r;
@@ -150,10 +155,10 @@
         return { modele: id, erreur: e.message };
       }
     }));
-    etat("Comparaison terminée."); noter("comparaison", q.slice(0, 80) + " → " + sorties.map(s => (s.nom || s.modele) + (s.erreur ? " (erreur)" : " " + (s.ms / 1000).toFixed(1) + " s")).join(", "), { q, systeme, sorties });
+    etat("Comparaison terminée."); noter("comparaison", q.slice(0, 80) + (fichesDonnees.length ? " [fiches : " + fichesDonnees.join(", ") + "]" : "") + " → " + sorties.map(s => (s.nom || s.modele) + (s.erreur ? " (erreur)" : " " + (s.ms / 1000).toFixed(1) + " s")).join(", "), { q, systeme: String(o.systeme || ""), fiches: fichesDonnees, sorties });
     return sorties;
   }
-  const lire = () => ({ modeles: cases().filter(c => c.checked).map(c => c.value), q: $("c-q").value, systeme: $("c-systeme").value, temp: $("c-temp").value, max: $("c-max").value, force: $("c-force").checked });
+  const lire = () => ({ modeles: cases().filter(c => c.checked).map(c => c.value), q: $("c-q").value, systeme: $("c-systeme").value, temp: $("c-temp").value, max: $("c-max").value, force: $("c-force").checked, fiches: $("c-fiches").checked });
   $("c-lancer").onclick = async () => { $("c-lancer").disabled = true; try { await comparer(lire()); } catch (e) { etat(e.message, true); } finally { $("c-lancer").disabled = false; } };
 
   // ---------- dictée ----------
@@ -169,39 +174,91 @@
       return { blob: new Blob([out], { type: "audio/wav" }), duree: r.duration };
     });
   }
+  // Dictée en direct : le micro est écouté en continu ; à chaque pause de parole (0,7 s de silence) ou après 14 s, la phrase est envoyée à Whisper
+  // et son texte s'ajoute aussitôt à la suite. Rien à valider. Le bruit de fond est mesuré en continu pour ajuster le seuil de parole.
+  const pcmVersWav = (pcm, taux) => {
+    const ratio = taux / 16000, n = Math.floor(pcm.length / ratio), sortie = new DataView(new ArrayBuffer(44 + n * 2));
+    const ecrire = (o, t) => [...t].forEach((c, i) => sortie.setUint8(o + i, c.charCodeAt(0)));
+    ecrire(0, "RIFF"); sortie.setUint32(4, 36 + n * 2, true); ecrire(8, "WAVEfmt "); sortie.setUint32(16, 16, true); sortie.setUint16(20, 1, true); sortie.setUint16(22, 1, true);
+    sortie.setUint32(24, 16000, true); sortie.setUint32(28, 32000, true); sortie.setUint16(32, 2, true); sortie.setUint16(34, 16, true); ecrire(36, "data"); sortie.setUint32(40, n * 2, true);
+    for (let i = 0; i < n; i++) { let somme = 0, k0 = Math.floor(i * ratio), k1 = Math.max(k0 + 1, Math.floor((i + 1) * ratio)); for (let k = k0; k < k1; k++) somme += pcm[k] || 0; sortie.setInt16(44 + i * 2, Math.max(-1, Math.min(1, somme / (k1 - k0))) * 32767, true); }
+    return new Blob([sortie], { type: "audio/wav" });
+  };
   const base64 = blob => new Promise((ok, ko) => { const f = new FileReader(); f.onload = () => ok(String(f.result).split(",")[1]); f.onerror = () => ko(new Error("Lecture de l’audio impossible.")); f.readAsDataURL(blob); });
-  let enreg = null, reco = null, texteNav = "", debutNav = 0, finNav = 0, chrono = 0, debutEnreg = 0;
-  async function transcrire(blob) {
-    $("d-w-meta").textContent = "Transcription…"; $("d-w-texte").textContent = "";
+  const D = { E: null, texte: "", neurons: 0, nb: 0, reco: null, texteNav: "", chrono: 0, debut: 0 };
+  const afficherDictee = () => { $("d-w-texte").textContent = D.texte; };
+  async function envoyerSegment(wav, duree, finParole) {
+    $("d-w-meta").textContent = "Transcription…";
     try {
-      const audio = await blob.arrayBuffer().then(b => new (window.AudioContext || window.webkitAudioContext)().decodeAudioData(b));
-      if (audio.duration > 130) throw new Error("Audio trop long (130 s au plus).");
-      const w = await versWav(audio), o = await ia("/dictee", { audio: await base64(w.blob), duree: w.duree, langue: "fr", force: $("c-force").checked });
-      $("d-w-texte").textContent = o.texte || "(rien reconnu)"; $("d-w-meta").textContent = (o.ms / 1000).toFixed(1) + " s pour " + w.duree.toFixed(1) + " s de voix · " + o.neurons + " Neurons";
-      noter("dictée", "Whisper : " + (o.texte || "").slice(0, 80), { whisper: o.texte, ms: o.ms, duree: w.duree, navigateur: texteNav });
+      const o = await ia("/dictee", { audio: await base64(wav), duree, langue: "fr", force: $("c-force").checked });
+      const t = String(o.texte || "").trim();
+      if (t) { D.texte += (D.texte ? " " : "") + t; afficherDictee(); }
+      D.neurons += o.neurons || 0; D.nb++;
+      $("d-w-meta").textContent = "Dernière phrase : texte affiché " + ((performance.now() - finParole) / 1000).toFixed(1) + " s après la fin de la parole · " + D.nb + " phrase(s), " + arrondi(D.neurons, 1) + " Neurons";
+      noter("dictée", "Whisper : " + t.slice(0, 80), { whisper: t, delai_s: (performance.now() - finParole) / 1000, duree, navigateur: D.texteNav });
     } catch (e) { $("d-w-meta").textContent = "Erreur : " + e.message; }
   }
-  $("d-enreg").onclick = async () => {
+  function finSegment(E) {
+    const seg = E.seg; E.seg = null; E.silence = 0; if (!seg || seg.voix < 0.25) return;         // bruit bref : ignoré
+    const total = seg.morceaux.reduce((n, m) => n + m.length, 0), pcm = new Float32Array(total); let o = 0; seg.morceaux.forEach(m => { pcm.set(m, o); o += m.length; });
+    const wav = pcmVersWav(pcm, E.taux), fin = performance.now();
+    E.file = E.file.then(() => envoyerSegment(wav, seg.duree, fin));
+  }
+  function traiter(E, d) {
+    let s = 0; for (let i = 0; i < d.length; i++) s += d[i] * d[i];
+    const rms = Math.sqrt(s / d.length), dur = d.length / E.taux, parle = rms > Math.max(0.012, E.bruit * 3);
+    if (!E.seg) {
+      if (!parle) E.bruit = E.bruit * 0.95 + rms * 0.05;
+      E.pre.push(d); if (E.pre.length > 3) E.pre.shift();
+      if (!parle) return;
+      E.seg = { morceaux: E.pre.slice(), duree: E.pre.reduce((n, m) => n + m.length, 0) / E.taux, voix: 0 }; E.pre = []; E.silence = 0;
+    } else { E.seg.morceaux.push(d); E.seg.duree += dur; }
+    if (parle) { E.silence = 0; E.seg.voix += dur; } else E.silence += dur;
+    if (E.silence >= 0.7 || E.seg.duree >= 14) finSegment(E);
+  }
+  async function demarrerDictee() {
+    const flux = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    const AC = window.AudioContext || window.webkitAudioContext, ctx = new AC(), src = ctx.createMediaStreamSource(flux), proc = ctx.createScriptProcessor(4096, 1, 1), muet = ctx.createGain();
+    muet.gain.value = 0; src.connect(proc); proc.connect(muet); muet.connect(ctx.destination);
+    const E = { flux, ctx, proc, src, taux: ctx.sampleRate, seg: null, pre: [], silence: 0, bruit: 0.004, file: Promise.resolve() };
+    proc.onaudioprocess = e => traiter(E, new Float32Array(e.inputBuffer.getChannelData(0)));
+    D.E = E; D.texte = ""; D.neurons = 0; D.nb = 0; D.texteNav = ""; afficherDictee(); $("d-n-texte").textContent = ""; $("d-w-meta").textContent = "Parlez…"; $("d-n-meta").textContent = "—";
+    // dictée du navigateur en parallèle, pour comparer (résultats provisoires affichés au fil de la parole)
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SR) {
+      const debutNav = performance.now(); let finaux = "";
+      try {
+        const reco = new SR(); reco.lang = "fr-FR"; reco.continuous = true; reco.interimResults = true; D.reco = reco;
+        reco.onresult = ev => { let prov = ""; finaux = ""; for (const r of ev.results) { if (r.isFinal) finaux += r[0].transcript + " "; else prov += r[0].transcript; } D.texteNav = (finaux + prov).trim(); $("d-n-texte").textContent = D.texteNav; $("d-n-meta").textContent = "mis à jour " + ((performance.now() - debutNav) / 1000).toFixed(1) + " s après le début"; };
+        reco.onend = () => { if (D.E) { try { reco.start(); } catch { /* arrêtée */ } } };    // le navigateur coupe seul après un silence : on relance
+        reco.start();
+      } catch { D.reco = null; }
+    } else $("d-n-meta").textContent = "Dictée du navigateur indisponible ici.";
+    D.debut = performance.now(); D.chrono = setInterval(() => { $("d-duree").textContent = "En écoute : " + ((performance.now() - D.debut) / 1000).toFixed(0) + " s"; }, 500);
+    $("d-enreg").disabled = true; $("d-stop").disabled = false;
+  }
+  async function arreterDictee() {
+    const E = D.E; if (!E) return; D.E = null; clearInterval(D.chrono); $("d-duree").textContent = "";
+    try { D.reco && D.reco.stop(); } catch { /* ignoré */ } D.reco = null;
+    try { E.proc.onaudioprocess = null; E.src.disconnect(); E.proc.disconnect(); } catch { /* ignoré */ }
+    finSegment(E); await E.file;                                   // la dernière phrase est envoyée avant de fermer
+    E.flux.getTracks().forEach(t => t.stop()); try { await E.ctx.close(); } catch { /* ignoré */ }
+    $("d-enreg").disabled = false; $("d-stop").disabled = true;
+  }
+  $("d-enreg").onclick = async () => { try { await demarrerDictee(); } catch (e) { etat("Micro indisponible : " + e.message, true); } };
+  $("d-stop").onclick = () => { arreterDictee(); };
+  $("d-copier").onclick = async () => { try { await navigator.clipboard.writeText(D.texte); etat("Texte copié."); } catch { etat("Copie refusée par le navigateur.", true); } };
+  // Fichier audio : transcrit d'un seul bloc (130 s au plus)
+  $("d-fichier").onchange = async e => {
+    const f = e.target.files[0]; if (!f) return; $("d-w-meta").textContent = "Transcription du fichier…";
     try {
-      const flux = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const morceaux = []; enreg = new MediaRecorder(flux);
-      enreg.ondataavailable = e => morceaux.push(e.data);
-      enreg.onstop = () => { flux.getTracks().forEach(t => t.stop()); clearInterval(chrono); transcrire(new Blob(morceaux, { type: enreg.mimeType })); };
-      texteNav = ""; $("d-n-texte").textContent = ""; $("d-n-meta").textContent = "—";
-      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (SR) {
-        reco = new SR(); reco.lang = "fr-FR"; reco.continuous = true; reco.interimResults = false; debutNav = performance.now();
-        reco.onresult = ev => { texteNav = [...ev.results].map(r => r[0].transcript).join(" ").trim(); $("d-n-texte").textContent = texteNav; finNav = performance.now(); };
-        reco.onend = () => { $("d-n-meta").textContent = texteNav ? "reçu " + ((finNav - debutNav) / 1000).toFixed(1) + " s après le début" : "rien reconnu"; };
-        try { reco.start(); } catch { reco = null; }
-      } else $("d-n-meta").textContent = "Dictée du navigateur indisponible ici.";
-      enreg.start(); debutEnreg = performance.now();
-      chrono = setInterval(() => { $("d-duree").textContent = "Enregistrement : " + ((performance.now() - debutEnreg) / 1000).toFixed(0) + " s"; }, 500);
-      $("d-enreg").disabled = true; $("d-stop").disabled = false;
-    } catch (e) { etat("Micro indisponible : " + e.message, true); }
+      const audio = await f.arrayBuffer().then(b => new (window.AudioContext || window.webkitAudioContext)().decodeAudioData(b));
+      if (audio.duration > 130) throw new Error("Audio trop long (130 s au plus).");
+      const w = await versWav(audio), t0 = performance.now(), o = await ia("/dictee", { audio: await base64(w.blob), duree: w.duree, langue: "fr", force: $("c-force").checked });
+      D.texte = o.texte || "(rien reconnu)"; afficherDictee(); $("d-w-meta").textContent = ((performance.now() - t0) / 1000).toFixed(1) + " s pour " + w.duree.toFixed(1) + " s de voix · " + o.neurons + " Neurons";
+      noter("dictée (fichier)", "Whisper : " + D.texte.slice(0, 80), { whisper: D.texte });
+    } catch (er) { $("d-w-meta").textContent = "Erreur : " + er.message; }
   };
-  $("d-stop").onclick = () => { try { enreg && enreg.state !== "inactive" && enreg.stop(); reco && reco.stop(); } catch { /* ignoré */ } $("d-enreg").disabled = false; $("d-stop").disabled = true; $("d-duree").textContent = ""; };
-  $("d-fichier").onchange = e => { const f = e.target.files[0]; if (f) transcrire(f); };
 
   // ---------- voix ----------
   async function lireVoix(texte) {
@@ -238,6 +295,26 @@
   function motsCles(q) {
     const t = norm(q).split(" ").filter(w => w.length > 2);
     return fiches.map((f, i) => { const h = norm(f.titre) + " " + norm((f.mots_cles || []).join(" ")) + " " + norm(f.resume); return [i, t.reduce((s, w) => s + (norm(f.titre).includes(w) ? 3 : 0) + (norm((f.mots_cles || []).join(" ")).includes(w) ? 2 : 0) + (h.includes(w) ? 1 : 0), 0)]; }).filter(x => x[1] > 0).sort((a, b) => b[1] - a[1]).map(x => x[0]);
+  }
+  // Fiches fournies aux modèles pendant une comparaison : les mêmes pour tous (comparaison équitable), choisies par la recherche hybride
+  // (mots-clés + sens si les fiches sont indexées), lues en entier depuis connaissances/fiches/<id>.json et raccourcies.
+  async function fichesPour(q, n = 3) {
+    await chargerFiches();
+    let ordre = motsCles(q);
+    if (vecteurs) {
+      try {
+        const vq = (await ia("/vecteurs", { textes: [q], force: true })).vecteurs[0], sens = fiches.map((_, i) => [i, cos(vq, vecteurs[i])]).sort((a, b) => b[1] - a[1]).slice(0, 8).map(x => x[0]);
+        const sc = new Map(); [ordre.slice(0, 8), sens].forEach(l => l.forEach((i, r) => sc.set(i, (sc.get(i) || 0) + 1 / (10 + r)))); ordre = [...sc].sort((a, b) => b[1] - a[1]).map(x => x[0]);
+      } catch { /* mots-clés seuls */ }
+    }
+    const choisies = ordre.slice(0, n), blocs = [], ids = [];
+    for (const i of choisies) {
+      try {
+        const r = await fetch(new URL("connaissances/fiches/" + encodeURIComponent(fiches[i].id) + ".json", location.href)); if (!r.ok) continue;
+        const f = await r.json(); ids.push(f.id); blocs.push("[" + f.id + "] " + f.titre + "\n" + String(f.contenu || "").slice(0, 2500));
+      } catch { /* fiche illisible : ignorée */ }
+    }
+    return { ids, texte: ids.length ? "FICHES DE LA BASE DE CONNAISSANCES DE LA FÉDÉRATION (réponds à partir d’elles quand elles répondent à la question et cite l’identifiant entre crochets ; si elles ne contiennent pas la réponse, dis-le au lieu d’inventer) :\n\n" + blocs.join("\n\n---\n\n") : "" };
   }
   async function chercher(q) {
     await chargerFiches(); const k = motsCles(q).slice(0, 8); let sens = [], hyb = [];
@@ -323,7 +400,7 @@
     resultats: () => RES,
     modeles: () => catalogue.map(m => m.id).concat(CLAUDE.map(c => c[0])),
     onglet,
-    async comparer({ q, systeme = "", modeles = "rapides", temp = 0, max = 800, force = false }) { onglet("comparer"); $("c-q").value = q; $("c-systeme").value = systeme; choisirModeles(modeles); return comparer({ ...lire(), q, systeme, temp, max, force }); },
+    async comparer({ q, systeme = "", modeles = "rapides", temp = 0, max = 800, force = false, fiches = true }) { onglet("comparer"); $("c-q").value = q; $("c-systeme").value = systeme; $("c-fiches").checked = fiches !== false; choisirModeles(modeles); return comparer({ ...lire(), q, systeme, temp, max, force, fiches }); },
     async voix(texte) { onglet("voix"); $("v-texte").value = texte; return lireVoix(texte); },
     async chercher(q) { onglet("recherche"); $("r-q").value = q; return chercher(q); },
     indexer
@@ -335,6 +412,7 @@
   if (P.get("temp")) $("c-temp").value = P.get("temp");
   if (P.get("max")) $("c-max").value = P.get("max");
   if (P.get("force") === "1") $("c-force").checked = true;
+  if (P.get("fiches") === "0") $("c-fiches").checked = false;
   if (P.get("modeles")) choisirModeles(P.get("modeles"));
   if (P.get("texte")) $("v-texte").value = P.get("texte");
   if (P.get("r")) $("r-q").value = P.get("r");

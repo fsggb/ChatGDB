@@ -15,8 +15,8 @@ resume: Page réservée à l'administrateur pour comparer des modèles (Claude e
 Page d'essais **réservée à l'administrateur** : https://fsggb.github.io/ScoutHub/ChatGDB/laboratoire.html. Elle sert à mesurer avant de décider : quel modèle répond le mieux, le plus vite, pour combien. Tout passe par le relais Cloudflare ; le jeton est signé par le serveur ScoutHub.
 
 ## Onglets
-- **Comparer** : une question (et une consigne système facultative) posée en même temps à plusieurs modèles : Claude Haiku et Sonnet (crédits Claude) et les modèles gratuits de Cloudflare (budget de Neurons). Chaque carte donne la réponse, la durée, les jetons et le coût. Raccourcis : Claude, gratuits rapides, tous les gratuits.
-- **Dictée** : enregistrement du micro (ou fichier audio) transcrit par Whisper et, en parallèle, par la dictée du navigateur, pour comparer.
+- **Comparer** : une question (et une consigne système facultative) posée en même temps à plusieurs modèles : Claude Haiku et Sonnet (crédits Claude) et les modèles gratuits de Cloudflare (budget de Neurons). Par défaut, tous les modèles reçoivent les mêmes fiches de la base de connaissances (les 3 plus pertinentes, choisies par la recherche hybride ; case à décocher) : la comparaison porte donc sur la façon de s'en servir, et la page liste les fiches fournies. Chaque carte donne la réponse, la durée, les jetons et le coût. Raccourcis : Claude, gratuits rapides, tous les gratuits.
+- **Dictée** : en direct. Un seul appui sur « Démarrer la dictée » : le micro est écouté en continu et chaque phrase (après une pause de parole) est transcrite par Whisper et ajoutée aussitôt au texte, sans rien valider ; la dictée du navigateur tourne en parallèle pour comparer le délai et la qualité. Un fichier audio peut aussi être transcrit d'un bloc.
 - **Voix** : lecture à voix haute d'un texte français (MeloTTS).
 - **Recherche** : mots-clés (méthode actuelle) contre recherche par le sens (bge-m3) contre leur combinaison, sur les fiches de la base de connaissances. Il faut d'abord « Indexer les fiches » (une fois, environ 35 Neurons).
 - **Budget** : Neurons utilisés aujourd'hui sur 10 000 (commun à tout le compte Cloudflare, remise à zéro à 00 h UTC) et tarifs par modèle. Au-delà de 80 %, les essais sont refusés sauf case « Forcer ».
@@ -25,7 +25,7 @@ Page d'essais **réservée à l'administrateur** : https://fsggb.github.io/Scout
 
 ## Piloter le laboratoire (pour ChatGDB)
 Ouvrir la page avec l'action « ouvrir » (application Laboratoire ou adresse `ChatGDB/laboratoire.html`) et des paramètres d'adresse ; les résultats se lisent ensuite sur la page (« lire ») ou dans le bloc « Résultats lisibles par ChatGDB ».
-- Comparer : `?onglet=comparer&modeles=llama-3.1,qwen3,claude-haiku&q=ma question&lancer=1` (autres paramètres : `systeme`, `temp`, `max`, `force=1`). `modeles` accepte des morceaux de nom, `claude`, `rapides` ou `tous`.
+- Comparer : `?onglet=comparer&modeles=llama-3.1,qwen3,claude-haiku&q=ma question&lancer=1` (autres paramètres : `systeme`, `temp`, `max`, `force=1`, `fiches=0` pour comparer sans les fiches). `modeles` accepte des morceaux de nom, `claude`, `rapides` ou `tous`.
 - Voix : `?onglet=voix&texte=Bonjour&lancer=1`. Recherche : `?onglet=recherche&r=ma question&lancer=1`.
 - La dictée demande le micro : elle ne se lance pas par adresse.
 - Depuis la page : `window.labo.comparer({q, modeles})`, `window.labo.chercher(q)`, `window.labo.resultats()`, `window.labo.etat()`.
