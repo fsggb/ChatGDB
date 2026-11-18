@@ -906,6 +906,25 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
     else if (!msg.stop_reason) { msg.stop_reason = "interrompu"; msg.coupure = "flux terminé trop tôt"; }
     return msg;
   }
+  // Longueur de réponse : on demande le maximum ; si le modèle en admet moins, son maximum est retenu (et gardé en mémoire)
+  const MAXTOK = (() => { try { return JSON.parse(localStorage.getItem("scouthub.chatgdb.maxtok") || "{}"); } catch { return {}; } })();
+  const maxSortie = m => MAXTOK[m] || 64000;
+  // Allège les anciens résultats d'outils et pièces jointes quand la conversation devient énorme : on garde intact le début de la
+  // conversation et les derniers échanges, et jamais les réponses de Claude (ses blocs signés ne peuvent pas être modifiés).
+  function alleger(messages, garder) {
+    const limite = Math.max(0, messages.length - garder), ancien = " … [ancien résultat raccourci]";
+    messages.forEach((m, k) => {
+      if (k >= limite || !Array.isArray(m.content) || m.role !== "user") return;
+      m.content = m.content.map(c => {
+        if (c.type === "image" || c.type === "document") return { type: "text", text: "[pièce jointe ancienne retirée pour alléger la conversation]" };
+        if (c.type === "tool_result") {
+          if (typeof c.content === "string") return c.content.length > 400 ? { ...c, content: c.content.slice(0, 400) + ancien } : c;
+          if (Array.isArray(c.content)) return { ...c, content: c.content.filter(x => x.type !== "image").map(x => x.type === "text" && x.text.length > 400 ? { ...x, text: x.text.slice(0, 400) + ancien } : x) };
+        }
+        return c;
+      });
+    });
+  }
   async function askRapide() {
     GA.setConv(current.id, stockDocs); GA.remettre && GA.remettre();
     // modifications faites à la main dans l'application depuis la dernière réponse : on les garde avant de continuer
@@ -917,25 +936,34 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
     try {
       const apps = GA.names(), conf = await Hub.call("rapide", { modele: prefs.modele, profondeur: prefs.profondeur, style: prefs.style, custom: prefs.custom, effort: prefs.effort, web: webOn, ...(apps.length ? { apps } : {}) });
       // l'outil « application » est décrit par la page elle-même (actions réellement disponibles dans ce navigateur)
-      const outils = conf.outils.map(o => o.name === "application" && GA.schema ? GA.schema(apps) : o);
+      // Aucun plafond d'étapes : l'outil « application » est décrit par la page, et les outils web (recherche, lecture de pages) n'ont plus de nombre maximal d'utilisations
+      const outils = conf.outils.map(o => o.name === "application" && GA.schema ? GA.schema(apps) : /^web_(search|fetch)_/.test(o.type || "") ? (({ max_uses, ...reste }) => reste)(o) : o);
       const hist = await history(), messages = hist.map(m => ({ role: m.role, content: contenuAnthropic(m) }));
       hist.forEach(m => { if (m.role === "user") (String(m.text || "").match(/https:\/\/[^\s)>"']+/g) || []).forEach(u => { urlsVues[u] = 1; }); });
-      let texte = "", reprises = 0, termine = false;
-      const NB_TOURS = 40;
-      for (let tour = 0; tour < NB_TOURS; tour++) {
-        // Presque au bout des étapes : on demande la réponse finale, sans outils, pour que la réponse ne manque jamais
-        const dernier = tour >= NB_TOURS - 2, lastMsg = messages[messages.length - 1];
-        if (dernier && tour === NB_TOURS - 2 && lastMsg && lastMsg.role === "user" && Array.isArray(lastMsg.content)) lastMsg.content.push({ type: "text", text: "Tu as atteint le nombre maximal d’étapes. Donne maintenant ta réponse finale à la personne : ce qui est fait, ce qui reste à faire, et ce qu’elle peut faire elle-même pour finir." });
-        const corps = { model: conf.modele, max_tokens: Math.max(conf.jetons || 0, 12000), stream: true, system: [{ type: "text", text: conf.systeme[0], cache_control: { type: "ephemeral" } }, { type: "text", text: conf.systeme[1] + (apps.length && GA.consignes ? "\n\n" + GA.consignes() : "") + (fichiersConv(current).length ? "\n\nFICHIERS DE CETTE CONVERSATION (enregistrés ; rechargés automatiquement quand tu ouvres l'application) : " + fichiersConv(current).map(f => f.app + " : « " + f.name + " »").join(" ; ") + ". Continue sur ce fichier, ne le recrée pas, sauf demande contraire." : "") }], messages, tools: outils, output_config: { effort: prefs.effort || "low" } };
+      let texte = "", sansProgres = 0, memeAction = { sig: "", n: 0 };
+      // Ni limite d'étapes ni limite de longueur : la boucle ne s'arrête que quand Claude a fini, ou quand la personne arrête (bouton) ;
+      // seules des protections contre les pannes existent (réessais, allègement du contexte, détection de tours sans progrès).
+      for (let tour = 0; ; tour++) {
+        if (abort.signal.aborted) throw new DOMException("Interrompu", "AbortError");
+        if (JSON.stringify(messages).length > 700000) alleger(messages, 6);          // longues sessions : les anciens résultats sont raccourcis, jamais la conversation
+        const avantTexte = liveText.length;
+        const corps = { model: conf.modele, max_tokens: maxSortie(conf.modele), stream: true, system: [{ type: "text", text: conf.systeme[0], cache_control: { type: "ephemeral" } }, { type: "text", text: conf.systeme[1].replace(/\(chaque action coûte[^)]*\)/, "(chaque capture coûte des crédits à la personne ; il n’y a pas de nombre maximal d’actions : continue jusqu’à ce que ce soit vraiment terminé)") + (apps.length && GA.consignes ? "\n\n" + GA.consignes() : "") + (fichiersConv(current).length ? "\n\nFICHIERS DE CETTE CONVERSATION (enregistrés ; rechargés automatiquement quand tu ouvres l'application) : " + fichiersConv(current).map(f => f.app + " : « " + f.name + " »").join(" ; ") + ". Continue sur ce fichier, ne le recrée pas, sauf demande contraire." : "") }], messages, tools: outils, output_config: { effort: prefs.effort || "low" } };
         if ((prefs.effort && prefs.effort !== "low") || prefs.profondeur === "approfondie") corps.thinking = { type: "adaptive" };
-        if (dernier) corps.tool_choice = { type: "none" };
         // Relais (la clé reste chez lui, le navigateur n'a qu'un jeton signé) ou, à défaut, clé dédiée de l'administrateur
         const appeler = () => conf.relais
           ? fetch(conf.relais, { method: "POST", signal: abort.signal, headers: { "content-type": "application/json", "x-scouthub-jeton": conf.jeton }, body: JSON.stringify(corps) })
           : fetch("https://api.anthropic.com/v1/messages", { method: "POST", signal: abort.signal, headers: { "content-type": "application/json", "x-api-key": conf.cle, "anthropic-version": conf.version, "anthropic-dangerous-direct-browser-access": "true", ...(conf.espace ? { "anthropic-workspace-id": conf.espace } : {}) }, body: JSON.stringify(corps) });
-        let res;
+        let res, ajust = 0;
         for (let essai = 0; ; essai++) {          // surcharge ou coupure passagère : jusqu'à 3 essais, sans rien perdre
           try { res = await appeler(); } catch (e) { if (e.name === "AbortError") throw e; if (essai < 2) { pas({ k: "web", t: "Connexion coupée : nouvel essai…" }); await new Promise(r => setTimeout(r, 1500 * (essai + 1))); continue; } throw new Error("Connexion au serveur impossible : vérifiez votre réseau, puis réessayez."); }
+          if (res.status === 400) {
+            let m = ""; try { m = (await res.clone().json()).error.message || ""; } catch { /* ignoré */ }
+            if (/max_tokens/i.test(m)) {            // « max_tokens: N > M, … maximum » : on prend le maximum du modèle
+              const nombres = (m.match(/\d[\d_]*/g) || []).map(x => +x.replace(/_/g, "")).filter(x => x > 1000 && x < corps.max_tokens);
+              if (nombres.length && ajust++ < 4) { MAXTOK[conf.modele] = Math.max(...nombres); try { localStorage.setItem("scouthub.chatgdb.maxtok", JSON.stringify(MAXTOK)); } catch { /* ignoré */ } corps.max_tokens = MAXTOK[conf.modele]; essai--; continue; }
+            }
+            if (/prompt is too long|too many tokens|context/i.test(m) && ajust++ < 8) { pas({ k: "web", t: "Conversation très longue : les anciens résultats sont raccourcis…" }); alleger(messages, ajust > 3 ? 2 : 4); essai--; continue; }
+          }
           if ((res.status >= 500 || res.status === 529) && essai < 2) { pas({ k: "web", t: "Claude est surchargé : nouvel essai…" }); await new Promise(r => setTimeout(r, 2000 * (essai + 1))); continue; }
           break;
         }
@@ -951,8 +979,9 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
         messages.push({ role: "assistant", content: msg.content });
         if (msg.stop_reason === "pause_turn") continue;
         if (msg.stop_reason === "max_tokens" || msg.stop_reason === "interrompu") {
-          // réponse coupée (longueur ou connexion) : on demande la suite, au plus 4 fois
-          if (reprises++ >= 4) { texte += "\n\n*(réponse tronquée : redemandez « continue » pour la suite)*"; liveText = texte; break; }
+          // réponse coupée (longueur ou connexion) : on demande la suite, autant de fois qu'il le faut tant que le texte avance
+          sansProgres = liveText.length > avantTexte ? 0 : sansProgres + 1;
+          if (sansProgres >= 4) { texte += "\n\n*(la réponse n’avance plus : redemandez « continue » pour la suite)*"; liveText = texte; break; }
           pas({ k: "web", t: msg.stop_reason === "max_tokens" ? "Réponse longue : ChatGDB continue…" : "Connexion coupée : ChatGDB reprend…" });
           const ids = new Set(msg.content.filter(b => /_tool_result$/.test(b.type)).map(b => b.tool_use_id));
           const sain = msg.content.filter(b => b.type !== "tool_use" && !(b.type === "server_tool_use" && !ids.has(b.id)));
@@ -984,6 +1013,9 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
           }
         }
         // les anciennes captures d'écran sont retirées pour garder des requêtes légères
+        // la même action répétée sans effet : un conseil à Claude (jamais un arrêt)
+        { const sig = msg.content.filter(x => x.type === "tool_use").map(x => x.name + JSON.stringify(x.input || {})).join("|"); memeAction = sig === memeAction.sig ? { sig, n: memeAction.n + 1 } : { sig, n: 1 };
+          if (memeAction.n >= 8) resultats.push({ type: "text", text: "Tu répètes exactement la même action depuis plusieurs étapes sans que rien ne change : change de méthode (autre position, autre commande, capture pour voir l’état réel) ou explique à la personne ce qui bloque." }); }
         messages.forEach((m, k) => { if (k < messages.length - 4 && Array.isArray(m.content)) m.content.forEach(c => { if (c.type === "tool_result" && Array.isArray(c.content)) c.content = c.content.filter(x => x.type !== "image"); }); });
         messages.push({ role: "user", content: resultats });
         if (liveText && !/\n$/.test(liveText)) liveText += "\n\n";
