@@ -844,6 +844,17 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
   // La clé dédiée est demandée au serveur à chaque conversation et gardée seulement en mémoire (jamais enregistrée).
   let liveText = "", rapideOk = false, liveTimer = 0;
   const liveSoon = () => { if (!liveTimer) liveTimer = setTimeout(() => { liveTimer = 0; updateLive(); }, 90); };
+  // Panneau latéral des applications d'administration (panneau.js) : contexte choisi dans une liste fixe, jamais du texte libre de l'adresse
+  const estAdmin = () => { try { return (Hub.cachedUser() || {}).role === "admin"; } catch { return false; } };
+  const CONTEXTES = { laboratoire: "le Laboratoire (essais de modèles, de dictée, de voix et de recherche ; fiche app-laboratoire)", administration: "l'Administration de ScoutHub (comptes et affichage du portail)" };
+  const CONTEXTE_PANNEAU = (() => { const p = new URLSearchParams(location.search); const c = CONTEXTES[p.get("contexte")]; return p.get("panneau") === "1" && c ? "PANNEAU LATÉRAL : l'administrateur te parle depuis le panneau latéral de " + c + ". Il voit cette page à côté de toi : réponds de façon brève et aide-le sur ce qu'il y fait ; pour la piloter, ouvre-la avec l'outil application." : ""; })();
+  // Fiches proposées par ChatGDB (administrateur seulement) : brouillon sur une branche séparée, validé ensuite dans le Laboratoire
+  const OUTIL_FICHE = { name: "proposer_fiche", description: "Propose une NOUVELLE fiche de connaissances (brouillon relu et validé ensuite par l'administrateur dans le Laboratoire, onglet Fiches). À utiliser très rarement, seulement pour un savoir utile, durable et général, absent de la base (vérifie d'abord avec chercher_connaissances).", input_schema: { type: "object", properties: {
+    id: { type: "string", description: "Identifiant en minuscules et tirets, préfixé par le thème (ex. froissartage-portique-sacs)." }, titre: { type: "string" }, theme: { type: "string", description: "Thème existant de la base (Froissartage, Matelotage, Feu, Cuisine, Topographie, Outils, Chants, Religion, Cryptographie, Applications, Artefacts) ou, à défaut, un nouveau mot." },
+    resume: { type: "string", description: "Une phrase qui dit de quoi parle la fiche." }, mots_cles: { type: "array", items: { type: "string" }, description: "5 à 10 mots que les gens utiliseraient pour la chercher." },
+    contenu: { type: "string", description: "Markdown court : sections « ## », listes courtes, 40 lignes au plus ; sans ligne « --- »." } }, required: ["id", "titre", "theme", "resume", "mots_cles", "contenu"] } };
+  const CONSIGNE_ARTEFACTS = "ARTEFACTS (pages HTML, animations, mises en page) : avant d'en créer un, lis avec lire_fiche les fiches « artefacts-design-web », « artefacts-animation-web » et « artefacts-checklist » de la base de connaissances et applique-les (règles définies, pas inventées) ; avant de livrer, passe la liste de contrôle.";
+  const CONSIGNE_FICHES = "FICHES DE CONNAISSANCES (administrateur) : tu peux proposer une fiche avec l'outil proposer_fiche, mais seulement si TOUTES ces conditions sont réunies : le savoir est utile à d'autres chefs, durable, général et fiable (vérifié, pas une supposition) ; il n'est pas déjà dans la base (cherche d'abord avec chercher_connaissances) ; il ne contient AUCUNE donnée personnelle ou confidentielle (noms, adresses, contacts, jeunes, santé, mots de passe, détails d'une unité précise). Une fiche = un sujet, courte, listes sèches, titre précis. Au plus 2 propositions par conversation, jamais pour une simple réponse ; dis à l'administrateur en une phrase ce que tu as proposé. Ce n'est qu'un brouillon : rien n'est publié sans sa validation. Ne propose jamais de modifier ou supprimer une fiche existante.";
   const BASE_C = new URL("connaissances/", location.href);
   let baseIdx = null;
   const normC = t => String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
@@ -934,10 +945,11 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
     busy = true; abort = new AbortController(); liveText = ""; liveSteps = baseSteps = []; updateSend(); drawThread(); notice();
     const journal = [], steps = [], sources = [], vus = {}, props = [], aides = [], depots = [], urlsVues = {}, pas = t => { steps.push(t); liveSteps = steps.slice(); updateLive(); };
     try {
-      const apps = GA.names(), conf = await Hub.call("rapide", { modele: prefs.modele, profondeur: prefs.profondeur, style: prefs.style, custom: prefs.custom, effort: prefs.effort, web: webOn, ...(apps.length ? { apps } : {}) });
+      const apps = GA.names(), conf = await Hub.call("rapide", { modele: prefs.modele, profondeur: prefs.profondeur, style: prefs.style, custom: [prefs.custom, CONTEXTE_PANNEAU, CONSIGNE_ARTEFACTS, estAdmin() ? CONSIGNE_FICHES : ""].filter(Boolean).join("\n"), effort: prefs.effort, web: webOn, ...(apps.length ? { apps } : {}) });
       // l'outil « application » est décrit par la page elle-même (actions réellement disponibles dans ce navigateur)
       // Aucun plafond d'étapes : l'outil « application » est décrit par la page, et les outils web (recherche, lecture de pages) n'ont plus de nombre maximal d'utilisations
       const outils = conf.outils.map(o => o.name === "application" && GA.schema ? GA.schema(apps) : /^web_(search|fetch)_/.test(o.type || "") ? (({ max_uses, ...reste }) => reste)(o) : o);
+      if (estAdmin() && conf.relais && conf.jeton) outils.push(OUTIL_FICHE);
       const hist = await history(), messages = hist.map(m => ({ role: m.role, content: contenuAnthropic(m) }));
       hist.forEach(m => { if (m.role === "user") (String(m.text || "").match(/https:\/\/[^\s)>"']+/g) || []).forEach(u => { urlsVues[u] = 1; }); });
       let texte = "", sansProgres = 0, memeAction = { sig: "", n: 0 }, relance = { enCours: false, vaines: 0 };
@@ -1015,6 +1027,14 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
             const r = await GA.exec(e, { mount: mountLive, unmount: closeArt });
             journal.push("Application" + (e.app ? " " + e.app : "") + " · " + (e.action || "") + " " + JSON.stringify(Object.fromEntries(Object.entries(e).filter(([k]) => k !== "action" && k !== "app" && k !== "feuilles"))).slice(0, 110) + " → " + String(r.texte || "").split("\n").filter(Boolean)[0].slice(0, 90));
             resultats.push({ type: "tool_result", tool_use_id: b.id, content: r.image ? [{ type: "text", text: r.texte }, { type: "image", source: { type: "base64", media_type: r.image.m, data: r.image.d } }] : r.texte });
+          } else if (b.name === "proposer_fiche") {
+            pas({ k: "outil", t: "Brouillon de fiche : " + String(e.titre || e.id || "").slice(0, 80) });
+            journal.push("proposer_fiche " + String(e.id || "").slice(0, 60));
+            let msgFiche; try {
+              const r = await fetch(conf.relais.replace(/\/chat\/?$/, "") + "/fiches/brouillon", { method: "POST", headers: { "content-type": "application/json", "x-scouthub-jeton": conf.jeton }, body: JSON.stringify(e) });
+              const o = await r.json().catch(() => ({})); msgFiche = r.ok && o.ok ? o.message : "Refusé : " + ((o.error && o.error.message) || "erreur " + r.status);
+            } catch (err) { msgFiche = "Erreur : " + err.message; }
+            resultats.push({ type: "tool_result", tool_use_id: b.id, content: msgFiche });
           } else if (b.name === "chercher_connaissances" || b.name === "lire_fiche") {
             pas({ k: "outil", t: b.name === "lire_fiche" ? "Lecture de la fiche " + (e.id || "") : "Base de connaissances : " + (e.requete || "") });
             journal.push(b.name + " " + JSON.stringify(e).slice(0, 100));

@@ -7,7 +7,7 @@
   const el = (tag, props = {}, ...enfants) => { const e = Object.assign(document.createElement(tag), props); e.append(...enfants); return e; };
   const etat = (t, ko) => { $("etat").textContent = t || ""; $("etat").classList.toggle("ko", !!ko); };
   const arrondi = (n, d = 1) => Math.round(n * 10 ** d) / 10 ** d;
-  const CLAUDE = [["claude-haiku-5-5", "Claude Haiku 5.5", 0.10, 0.50], ["claude-sonnet-5-5", "Claude Sonnet 5.5", 2, 10]];
+  let CLAUDE = [["claude-haiku-5-5", "Claude Haiku 5.5", 0.10, 0.50], ["claude-sonnet-5-5", "Claude Sonnet 5.5", 2, 10], ["claude-opus-5-5", "Claude Opus 5.5", 4, 20]];
   const RAPIDES = ["llama-3.1-8b", "qwen3-30b", "gpt-oss-20b", "granite", "gemma-4"];
   const PARAMETRES = "onglet, q (question), systeme, modeles (liste séparée par des virgules : morceaux de nom, « claude », « rapides » ou « tous »), temp, max, force=1, lancer=1 ; voix : texte ; recherche : r (question)";
 
@@ -68,6 +68,7 @@
   function onglet(nom) {
     document.querySelectorAll("#onglets button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.onglet === nom)));
     document.querySelectorAll(".panneau").forEach(p => { p.hidden = p.id !== "p-" + nom; });
+    if (nom === "fiches" && typeof listerFiches === "function" && !onglet.fichesVues) { onglet.fichesVues = true; listerFiches(); }
     try { history.replaceState(null, "", "#" + nom); } catch { /* ignoré */ }
   }
   $("onglets").addEventListener("click", e => { const b = e.target.closest("button"); if (b) onglet(b.dataset.onglet); });
@@ -96,7 +97,8 @@
   }
   // Appel d'un modèle Claude par le relais (réponse en flux, lue jusqu'au bout)
   async function claude(id, systeme, q, temp, max) {
-    const corps = { model: id, max_tokens: max, temperature: temp, messages: [{ role: "user", content: q }] };
+    // Pas de température : les modèles Claude 5.5 refusent toute valeur autre que celle par défaut
+    const corps = { model: id, max_tokens: max, messages: [{ role: "user", content: q }] };
     if (systeme) corps.system = systeme;
     const t0 = performance.now(), res = await appel("/chat", corps);
     if (!res.ok) { let m = "Erreur " + res.status; try { const o = await res.json(); m = o.error && o.error.message || m; } catch { /* ignoré */ } throw new Error(m); }
@@ -254,6 +256,29 @@
   $("r-lancer").onclick = async () => { try { await chercher($("r-q").value); } catch (e) { etat(e.message, true); } };
   $("r-q").addEventListener("keydown", e => { if (e.key === "Enter") $("r-lancer").click(); });
 
+  // ---------- brouillons de fiches ----------
+  async function fichesAppel(chemin, corps) {
+    const res = await appel("/fiches/" + chemin, corps || {}); let o; try { o = await res.json(); } catch { throw new Error("Réponse invalide (" + res.status + ")."); }
+    if (!res.ok || o.ok === false) throw new Error(o.error && o.error.message || "Erreur " + res.status);
+    return o;
+  }
+  async function listerFiches() {
+    $("f-etat").textContent = "Chargement…"; const z = $("f-liste"); z.textContent = "";
+    try {
+      const o = await fichesAppel("liste");
+      $("f-etat").textContent = o.brouillons.length ? o.brouillons.length + " brouillon(s) à relire." : "Aucun brouillon en attente.";
+      o.brouillons.forEach(b => {
+        const texte = el("pre", { className: "texte", hidden: true }), statut = el("p", { className: "meta" });
+        const voir = el("button", { type: "button", textContent: "Voir" }), ok = el("button", { type: "button", className: "primaire", textContent: "Valider" }), non = el("button", { type: "button", textContent: "Refuser" });
+        voir.onclick = async () => { if (texte.hidden && !texte.textContent) { try { texte.textContent = (await fichesAppel("lire", { id: b.id })).texte; } catch (e) { statut.textContent = e.message; } } texte.hidden = !texte.hidden; };
+        ok.onclick = async () => { ok.disabled = non.disabled = true; try { const r = await fichesAppel("valider", { id: b.id }); statut.textContent = r.message; noter("fiche validée", b.id, r); } catch (e) { statut.textContent = e.message; ok.disabled = non.disabled = false; } };
+        non.onclick = async () => { ok.disabled = non.disabled = true; try { await fichesAppel("refuser", { id: b.id }); statut.textContent = "Brouillon refusé et supprimé."; noter("fiche refusée", b.id, {}); } catch (e) { statut.textContent = e.message; ok.disabled = non.disabled = false; } };
+        z.append(el("div", { className: "carte" }, el("header", {}, el("h3", { textContent: b.titre }), el("span", { className: "mu", textContent: b.theme })), el("p", { textContent: b.resume }), el("p", { className: "meta", textContent: b.id }), el("div", { className: "ligne" }, voir, ok, non), statut, texte));
+      });
+    } catch (e) { $("f-etat").textContent = "Erreur : " + e.message; }
+  }
+  $("f-actualiser").onclick = listerFiches;
+
   // ---------- boîte à outils de développement ----------
   const OUTILS = [
     ["1. RTK : économiser les jetons", "Résume les sorties des commandes (git, ls, npm…) avant que Claude les lise : bien moins de jetons consommés.", ["winget install --id rtk-ai.rtk -e", "rtk init -g"]],
@@ -275,7 +300,10 @@
   // ---------- démarrage ----------
   dessinerJournal();
   try {
-    const o = await ia("/modeles", {}); catalogue = o.modeles; dessinerModeles();
+    const o = await ia("/modeles", {}); catalogue = o.modeles;
+    // Dernières versions de Claude, demandées au relais (il envoie d'ailleurs toujours chaque requête à la dernière version de la famille)
+    try { const r = await (await appel("/claude/modeles", {})).json(); if (r.modeles && r.modeles.length) CLAUDE = r.modeles.map(m => [m.id, m.nom, m.prix[0], m.prix[1]]); } catch { /* liste de secours */ }
+    dessinerModeles();
   } catch (e) { etat("Laboratoire indisponible : " + e.message, true); dessinerModeles(); }
   try { await chargerFiches(); } catch { /* l'onglet Recherche le dira */ }
 

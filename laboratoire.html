@@ -26,6 +26,7 @@
   <button role="tab" data-onglet="dictee" aria-selected="false">Dictée</button>
   <button role="tab" data-onglet="voix" aria-selected="false">Voix</button>
   <button role="tab" data-onglet="recherche" aria-selected="false">Recherche</button>
+  <button role="tab" data-onglet="fiches" aria-selected="false">Fiches</button>
   <button role="tab" data-onglet="budget" aria-selected="false">Budget</button>
   <button role="tab" data-onglet="outils" aria-selected="false">Outils</button>
   <button role="tab" data-onglet="journal" aria-selected="false">Journal</button>
@@ -97,6 +98,14 @@
     <div class="trois" id="r-resultats"></div>
   </section>
 
+  <!-- FICHES -->
+  <section id="p-fiches" class="panneau" hidden>
+    <h2>Brouillons de fiches</h2>
+    <p class="mu">Fiches proposées par ChatGDB au fil des conversations. Elles sont enregistrées sur une branche séparée (« brouillons ») du dépôt ChatGDB : rien n’est publié tant que vous ne les validez pas. Valider les ajoute à la base de connaissances (publication dans quelques minutes) ; refuser les supprime.</p>
+    <div class="ligne"><button type="button" id="f-actualiser">Actualiser</button><span id="f-etat" class="mu"></span></div>
+    <div id="f-liste" class="resultats"></div>
+  </section>
+
   <!-- BUDGET -->
   <section id="p-budget" class="panneau" hidden>
     <h2>Budget de Neurons</h2>
@@ -130,6 +139,7 @@
 
 <script src="/ScoutHub/config.js"></script>
 <script src="/ScoutHub/common.js"></script>
-<script src="laboratoire.js?v=1"></script>
+<script src="laboratoire.js?v=3"></script>
+<script src="panneau.js" data-contexte="laboratoire"></script>
 </body>
 </html>
