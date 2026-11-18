@@ -99,3 +99,8 @@ Exemple : `https://fsggb.github.io/ScoutMap/?itineraire=Annecy|Talloires|Menthon
 - Comment afficher la carte IGN au 1:25 000 (SCAN 25) ?
 - Comment dessiner une carte de grand jeu ?
 - Quels paramètres d'adresse permettent d'ouvrir une carte déjà préparée ?
+
+## Appel vocal de groupe (dans le partage en direct)
+Dans le panneau Partage, « Lancer un appel vocal » appelle les autres personnes connectées, comme une conférence téléphonique : elles voient une bannière « Rejoindre / Plus tard » (avec sonnerie et vibration si le navigateur le permet) et seules celles qui veulent répondent. Les personnes dans l'appel s'entendent toutes en même temps ; chacune peut couper son micro ; l'appel s'arrête quand la dernière raccroche. Audio seul, 8 personnes au plus.
+- Limites : sur téléphone, l'appel est prévu écran allumé (le navigateur coupe souvent le micro quand l'écran se verrouille, surtout sur iPhone) ; la sonnerie ne marche que si ScoutMap est ouvert ; certains réseaux filtrés bloquent les appels.
+- On peut lancer un partage même si la carte est vide (simple avertissement) : ce qui sera posé ensuite apparaîtra chez les autres.
