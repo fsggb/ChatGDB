@@ -39,6 +39,16 @@
   const wait = ms => new Promise(r => setTimeout(r, ms));
 
   let frame = null, els = [];
+  // Panneau latéral (panneau.js) : ChatGDB est dans un cadre à côté d'une page d'administration du même site. Par défaut, l'outil agit
+  // directement sur cette page hôte (lire, chercher, cliquer, saisir, capture…), avec le même curseur visible et les mêmes garde-fous.
+  const PANNEAU = (() => { try { return new URLSearchParams(location.search).get("panneau") === "1" && window.parent !== window && window.parent.location.origin === location.origin; } catch { return false; } })();
+  function hoteFrame() {
+    try {
+      const p = window.parent; if (!PANNEAU || p.location.origin !== location.origin) return null;
+      return { isHote: true, get isConnected() { return !!p.document && !!p.document.body; }, get contentDocument() { return p.document; }, get contentWindow() { return p; },
+        getBoundingClientRect: () => ({ left: 0, top: 0, width: p.innerWidth, height: p.innerHeight }), get clientWidth() { return p.innerWidth; }, get clientHeight() { return p.innerHeight; } };
+    } catch { return null; }
+  }
   // Pont avec l'application Craft du cadre : prête, fichiers enregistrés (attendus par ChatGDB, sinon téléchargés pour la personne)
   const pont = { pret: false, attente: null, appli: "", sale: false, touche: false, dernier: null };
   // Le fichier de travail reste dans la conversation : stockage fourni par la page (IndexedDB), identifiant de la conversation
@@ -145,7 +155,7 @@
   const loaded = (f, ms = 15000) => new Promise(res => { let done = false; const end = () => { if (!done) { done = true; res(); } }; f.addEventListener("load", end, { once: true }); setTimeout(end, ms); });
   // Le cadre doit rester dans le dossier d'une application autorisée (jamais admin.html, compte.html… du portail), même après un clic ou une redirection
   const inApp = loc => registry().some(a => loc.origin === location.origin && loc.pathname.startsWith(a.url.pathname.replace(/[^/]*$/, "")) && !/%2e/i.test(loc.href));
-  const docOf = () => { try { if (!frame || !frame.contentDocument || !frame.contentDocument.body) return null; return inApp(frame.contentWindow.location) ? frame.contentDocument : null; } catch { return null; } };
+  const docOf = () => { try { if (!frame || !frame.contentDocument || !frame.contentDocument.body) return null; return frame.isHote || inApp(frame.contentWindow.location) ? frame.contentDocument : null; } catch { return null; } };
 
   function label(e) {
     const t = e.getAttribute("aria-label") || e.getAttribute("title") || (e.innerText || "").trim() || e.getAttribute("placeholder") || e.getAttribute("alt") || e.value || e.id || "";
@@ -248,11 +258,13 @@
   let cursor = null;
   function cursorAt(x, y, clic) {
     if (!frame || !frame.isConnected) return Promise.resolve();
+    const cible = frame.isHote ? frame.contentDocument : document;
+    if (cursor && cursor.ownerDocument !== cible) { cursor.remove(); cursor = null; }
     if (!cursor) {
-      cursor = document.createElement("div"); cursor.setAttribute("aria-hidden", "true");
+      cursor = cible.createElement("div"); cursor.setAttribute("aria-hidden", "true");
       cursor.style.cssText = "position:fixed;z-index:2147483647;pointer-events:none;width:22px;height:22px;left:0;top:0;transition:transform .45s cubic-bezier(.3,.7,.3,1);filter:drop-shadow(0 1px 2px rgba(0,0,0,.45))";
       cursor.innerHTML = '<svg viewBox="0 0 22 22" width="22" height="22"><path d="M3 2l14 9-6.2 1.3L14 19l-2.6 1.2-3.1-6.5L3 18z" fill="#fff" stroke="#111" stroke-width="1.4" stroke-linejoin="round"/></svg><span style="position:absolute;left:-9px;top:-9px;width:18px;height:18px;border-radius:50%;border:2px solid #e8590c;opacity:0;transition:opacity .2s,transform .35s;transform:scale(.4)"></span>';
-      document.body.append(cursor);
+      cible.body.append(cursor);
     }
     const r = frame.getBoundingClientRect();
     cursor.style.display = "block";
@@ -360,6 +372,8 @@
   async function exec1(input, ctx) {
     const a = String((input && input.action) || "");
     try {
+      if (PANNEAU && (!frame || !frame.isConnected)) frame = hoteFrame();
+      if (a === "ouvrir" && PANNEAU && /^(page|h[oô]te|cette page|ici)$/i.test(String(input.app || "").trim())) { frame = hoteFrame(); return { texte: "Page à côté du panneau (déjà ouverte) : tu agis directement dessus.\n\n" + snapshot() }; }
       if (a === "ouvrir") {
         const u = urlOf({ app: input.app, params: input.params, chemin: input.chemin });
         if (!u) return { texte: "Refusé : application inconnue ou non autorisée « " + String(input.app || "") + " ». Applications disponibles : " + names().join(", ") + "." };

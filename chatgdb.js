@@ -847,7 +847,28 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
   // Panneau latéral des applications d'administration (panneau.js) : contexte choisi dans une liste fixe, jamais du texte libre de l'adresse
   const estAdmin = () => { try { return (Hub.cachedUser() || {}).role === "admin"; } catch { return false; } };
   const CONTEXTES = { laboratoire: "le Laboratoire (essais de modèles, de dictée, de voix et de recherche ; fiche app-laboratoire)", administration: "l'Administration de ScoutHub (comptes et affichage du portail)" };
-  const CONTEXTE_PANNEAU = (() => { const p = new URLSearchParams(location.search); const c = CONTEXTES[p.get("contexte")]; return p.get("panneau") === "1" && c ? "PANNEAU LATÉRAL : l'administrateur te parle depuis le panneau latéral de " + c + ". Il voit cette page à côté de toi : réponds de façon brève et aide-le sur ce qu'il y fait ; pour la piloter, ouvre-la avec l'outil application." : ""; })();
+  const CTX_ID = (() => { const p = new URLSearchParams(location.search); return p.get("panneau") === "1" && CONTEXTES[p.get("contexte")] ? p.get("contexte") : ""; })();
+  const CONTEXTE_PANNEAU = CTX_ID ? "PANNEAU LATÉRAL — TU ES UN AGENT : l'administrateur te parle depuis le panneau latéral de " + CONTEXTES[CTX_ID] + ". Cette page est DÉJÀ ouverte à côté de toi : agis directement dessus avec l'outil « application » (sans « ouvrir ») : « lire » ou « chercher » pour repérer les boutons et champs, puis « cliquer », « saisir », « touche », « capture » pour vérifier ; enchaîne les actions seul, sans demander de confirmation entre deux étapes, et termine par un court compte rendu de ce que tu as fait. " + (CTX_ID === "laboratoire" ? "Pour les essais, utilise de préférence l'outil « laboratoire » (comparer des modèles avec ou sans fiches, chercher dans la base, lire à voix haute, lire les résultats et le budget de Neurons) : c'est plus fiable que de cliquer ; contrôle le budget de Neurons avant une grosse comparaison et ne force jamais sans que l'administrateur l'ait demandé. " : "") + "Pour utiliser une AUTRE application, ouvre-la avec « ouvrir » (elle s'affiche dans ce panneau) ; « ouvrir » avec app = « page » te ramène à la page à côté." : "";
+  const labo = () => { try { return CTX_ID === "laboratoire" && window.parent !== window && window.parent.location.origin === location.origin ? window.parent.labo : null; } catch { return null; } };
+  const OUTIL_LABO = { name: "laboratoire", description: "Pilote le Laboratoire (page à côté du panneau) sans cliquer : comparer des modèles (Claude et modèles gratuits Cloudflare) sur une question, avec ou sans les fiches de la base de connaissances ; chercher dans la base (mots-clés, sens, hybride) ; lire un texte à voix haute ; lire les résultats déjà obtenus et l'état du budget de Neurons du jour.", input_schema: { type: "object", properties: {
+    action: { type: "string", enum: ["comparer", "chercher", "voix", "indexer", "resultats", "etat", "modeles"] },
+    q: { type: "string", description: "Pour comparer ou chercher : la question." }, modeles: { type: "string", description: "Pour comparer : morceaux de noms séparés par des virgules (ex. « llama-3.3,qwen3,claude-haiku »), ou « claude », « rapides », « tous » (tous les gratuits : coûteux en Neurons)." },
+    systeme: { type: "string" }, fiches: { type: "boolean", description: "Pour comparer : donner les fiches de la base aux modèles (vrai par défaut)." }, max: { type: "integer" }, force: { type: "boolean", description: "N'utiliser que si l'administrateur l'a demandé." }, texte: { type: "string", description: "Pour voix : le texte à lire." } }, required: ["action"] } };
+  async function outilLabo(e) {
+    const L = labo(); if (!L) return "Le laboratoire n'est pas accessible depuis ce panneau.";
+    try {
+      let r;
+      if (e.action === "comparer") r = await L.comparer({ q: String(e.q || ""), modeles: e.modeles || "rapides", systeme: e.systeme || "", fiches: e.fiches !== false, max: e.max || 800, force: !!e.force });
+      else if (e.action === "chercher") r = await L.chercher(String(e.q || ""));
+      else if (e.action === "voix") r = await L.voix(String(e.texte || e.q || ""));
+      else if (e.action === "indexer") r = await L.indexer();
+      else if (e.action === "resultats") r = L.resultats();
+      else if (e.action === "etat") r = L.etat();
+      else if (e.action === "modeles") r = L.modeles();
+      else return "Action inconnue.";
+      return String(JSON.stringify(r === undefined ? L.resultats().essais.slice(-1) : r)).slice(0, 7000);
+    } catch (err) { return "Erreur : " + err.message; }
+  }
   // Fiches proposées par ChatGDB (administrateur seulement) : brouillon sur une branche séparée, validé ensuite dans le Laboratoire
   const OUTIL_FICHE = { name: "proposer_fiche", description: "Propose une NOUVELLE fiche de connaissances (brouillon relu et validé ensuite par l'administrateur dans le Laboratoire, onglet Fiches). À utiliser très rarement, seulement pour un savoir utile, durable et général, absent de la base (vérifie d'abord avec chercher_connaissances).", input_schema: { type: "object", properties: {
     id: { type: "string", description: "Identifiant en minuscules et tirets, préfixé par le thème (ex. froissartage-portique-sacs)." }, titre: { type: "string" }, theme: { type: "string", description: "Thème existant de la base (Froissartage, Matelotage, Feu, Cuisine, Topographie, Outils, Chants, Religion, Cryptographie, Applications, Artefacts) ou, à défaut, un nouveau mot." },
@@ -950,6 +971,7 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
       // Aucun plafond d'étapes : l'outil « application » est décrit par la page, et les outils web (recherche, lecture de pages) n'ont plus de nombre maximal d'utilisations
       const outils = conf.outils.map(o => o.name === "application" && GA.schema ? GA.schema(apps) : /^web_(search|fetch)_/.test(o.type || "") ? (({ max_uses, ...reste }) => reste)(o) : o);
       if (estAdmin() && conf.relais && conf.jeton) outils.push(OUTIL_FICHE);
+      if (labo()) outils.push(OUTIL_LABO);
       const hist = await history(), messages = hist.map(m => ({ role: m.role, content: contenuAnthropic(m) }));
       hist.forEach(m => { if (m.role === "user") (String(m.text || "").match(/https:\/\/[^\s)>"']+/g) || []).forEach(u => { urlsVues[u] = 1; }); });
       let texte = "", sansProgres = 0, memeAction = { sig: "", n: 0 }, relance = { enCours: false, vaines: 0 };
@@ -1027,6 +1049,10 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
             const r = await GA.exec(e, { mount: mountLive, unmount: closeArt });
             journal.push("Application" + (e.app ? " " + e.app : "") + " · " + (e.action || "") + " " + JSON.stringify(Object.fromEntries(Object.entries(e).filter(([k]) => k !== "action" && k !== "app" && k !== "feuilles"))).slice(0, 110) + " → " + String(r.texte || "").split("\n").filter(Boolean)[0].slice(0, 90));
             resultats.push({ type: "tool_result", tool_use_id: b.id, content: r.image ? [{ type: "text", text: r.texte }, { type: "image", source: { type: "base64", media_type: r.image.m, data: r.image.d } }] : r.texte });
+          } else if (b.name === "laboratoire") {
+            pas({ k: "outil", t: "Laboratoire : " + (e.action || "") + (e.q ? " « " + String(e.q).slice(0, 60) + " »" : "") });
+            journal.push("laboratoire " + JSON.stringify(e).slice(0, 100));
+            resultats.push({ type: "tool_result", tool_use_id: b.id, content: await outilLabo(e) });
           } else if (b.name === "proposer_fiche") {
             pas({ k: "outil", t: "Brouillon de fiche : " + String(e.titre || e.id || "").slice(0, 80) });
             journal.push("proposer_fiche " + String(e.id || "").slice(0, 60));
