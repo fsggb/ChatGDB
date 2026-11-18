@@ -275,7 +275,7 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
   let setTab = "general";
   function openSettings(t) {
     $("set-theme").value = app.dataset.theme; $("set-custom").value = prefs.custom; $("set-web").checked = prefs.web; $("set-style").value = prefs.style; $("set-model").value = prefs.modele; $("set-effort").value = prefs.effort; $("set-depth").value = prefs.profondeur;
-    $("set-nav-mem").hidden = !isAdmin; showTab(t || setTab); if (!$("dlg-settings").open) $("dlg-settings").showModal();
+    $("set-nav-mem").hidden = !isAdmin; $("set-nav-labo").hidden = !isAdmin || !!CTX_ID; showTab(t || setTab); if (!$("dlg-settings").open) $("dlg-settings").showModal();
     if (t === "usage") loadUsage();
   }
   function showTab(t) {
@@ -1199,7 +1199,7 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
   // ---------- état du serveur : ouvert pour ce compte ? crédits, dictée, bibliothèque ----------
   Hub.call("credits").then(o => {
     if (o.chat) live = true; voiceServer = !!o.voix; if (o.credits) credits(o.credits); biblioApi = o.biblio || "";
-    if (o.admin) { isAdmin = true; $("set-nav-mem").hidden = false; if (GA.setAdmin) GA.setAdmin(true); }
+    if (o.admin) { isAdmin = true; $("set-nav-mem").hidden = false; $("set-nav-labo").hidden = !!CTX_ID; if (GA.setAdmin) GA.setAdmin(true); }
     rapideOk = !!o.rapide;      // réponses au fil de l'eau par le relais Cloudflare, pour tout le monde
     if (!o.chat) closedMsg = o.raison === "cle" ? "ChatGDB attend la clé Claude du serveur (propriété ANTHROPIC_IA des propriétés du script ScoutHub)."
       : "ChatGDB est réservé aux administrateurs pour le moment. Vous êtes connecté en tant que « " + (Hub.ROLE_LABELS[o.role] || o.role) + " » (" + (o.email || user.email) + ").";
