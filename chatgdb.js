@@ -823,7 +823,7 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
   async function history() {
     const list = current.messages.slice(-24), out = []; let imgBudget = 8, pdfDone = false, lastUser = -1; list.forEach((m, i) => { if (m.role === "user") lastUser = i; });
     for (let i = list.length - 1; i >= 0; i--) {
-      const m = list[i]; if (m.role !== "user") { out.push({ role: "assistant", text: m.text + (m.edits || []).map(e => "\n\n[Version modifiée par la personne : c'est désormais la version de référence]\n" + artTag(e)).join("") }); continue; }
+      const m = list[i]; if (m.role !== "user") { out.push({ role: "assistant", text: m.text + (m.edits || []).map(e => "\n\n[Version modifiée par la personne : c'est désormais la version de référence]\n" + artTag(e)).join("") + ((m.journal || []).length ? "\n\n[JOURNAL AJOUTÉ PAR LE SYSTÈME (ne le recopie jamais dans tes réponses) — actions RÉELLEMENT exécutées pendant cette réponse ; c'est la trace fiable de ton travail, toute action listée a bien été faite :\n" + m.journal.slice(-80).map((x, i) => (i + 1) + ". " + x).join("\n") + "]" : "") }); continue; }
       const o = { role: "user", text: m.text }, images = [], docs = [], notes = [];
       for (let j = 0; j < (m.atts || []).length; j++) {
         const a = m.atts[j], rec = await idb.get(fkey(current.id, m.id, j));
@@ -932,7 +932,7 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
     const idMsg = uid();
     debutReponse = Date.now(); clearInterval(chrono); chrono = setInterval(() => { if (!liveText) updateLive(); }, 1000);
     busy = true; abort = new AbortController(); liveText = ""; liveSteps = baseSteps = []; updateSend(); drawThread(); notice();
-    const steps = [], sources = [], vus = {}, props = [], aides = [], depots = [], urlsVues = {}, pas = t => { steps.push(t); liveSteps = steps.slice(); updateLive(); };
+    const journal = [], steps = [], sources = [], vus = {}, props = [], aides = [], depots = [], urlsVues = {}, pas = t => { steps.push(t); liveSteps = steps.slice(); updateLive(); };
     try {
       const apps = GA.names(), conf = await Hub.call("rapide", { modele: prefs.modele, profondeur: prefs.profondeur, style: prefs.style, custom: prefs.custom, effort: prefs.effort, web: webOn, ...(apps.length ? { apps } : {}) });
       // l'outil « application » est décrit par la page elle-même (actions réellement disponibles dans ce navigateur)
@@ -940,14 +940,15 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
       const outils = conf.outils.map(o => o.name === "application" && GA.schema ? GA.schema(apps) : /^web_(search|fetch)_/.test(o.type || "") ? (({ max_uses, ...reste }) => reste)(o) : o);
       const hist = await history(), messages = hist.map(m => ({ role: m.role, content: contenuAnthropic(m) }));
       hist.forEach(m => { if (m.role === "user") (String(m.text || "").match(/https:\/\/[^\s)>"']+/g) || []).forEach(u => { urlsVues[u] = 1; }); });
-      let texte = "", sansProgres = 0, memeAction = { sig: "", n: 0 };
+      let texte = "", sansProgres = 0, memeAction = { sig: "", n: 0 }, relance = { enCours: false, vaines: 0 };
+      const appDejaUtilisee = () => journal.some(j => /^Application/.test(j)) || [...current.messages].reverse().slice(0, 8).some(m => (m.journal || []).some(j => /^Application/.test(j)));
       // Ni limite d'étapes ni limite de longueur : la boucle ne s'arrête que quand Claude a fini, ou quand la personne arrête (bouton) ;
       // seules des protections contre les pannes existent (réessais, allègement du contexte, détection de tours sans progrès).
       for (let tour = 0; ; tour++) {
         if (abort.signal.aborted) throw new DOMException("Interrompu", "AbortError");
         if (JSON.stringify(messages).length > 700000) alleger(messages, 6);          // longues sessions : les anciens résultats sont raccourcis, jamais la conversation
         const avantTexte = liveText.length;
-        const corps = { model: conf.modele, max_tokens: maxSortie(conf.modele), stream: true, system: [{ type: "text", text: conf.systeme[0], cache_control: { type: "ephemeral" } }, { type: "text", text: conf.systeme[1].replace(/\(chaque action coûte[^)]*\)/, "(chaque capture coûte des crédits à la personne ; il n’y a pas de nombre maximal d’actions : continue jusqu’à ce que ce soit vraiment terminé)") + (apps.length && GA.consignes ? "\n\n" + GA.consignes() : "") + (fichiersConv(current).length ? "\n\nFICHIERS DE CETTE CONVERSATION (enregistrés ; rechargés automatiquement quand tu ouvres l'application) : " + fichiersConv(current).map(f => f.app + " : « " + f.name + " »").join(" ; ") + ". Continue sur ce fichier, ne le recrée pas, sauf demande contraire." : "") }], messages, tools: outils, output_config: { effort: prefs.effort || "low" } };
+        const corps = { model: conf.modele, max_tokens: maxSortie(conf.modele), stream: true, system: [{ type: "text", text: conf.systeme[0], cache_control: { type: "ephemeral" } }, { type: "text", text: systemeVariable(conf, apps) }], messages, tools: outils, output_config: { effort: prefs.effort || "low" } };
         if ((prefs.effort && prefs.effort !== "low") || prefs.profondeur === "approfondie") corps.thinking = { type: "adaptive" };
         // Relais (la clé reste chez lui, le navigateur n'a qu'un jeton signé) ou, à défaut, clé dédiée de l'administrateur
         const appeler = () => conf.relais
@@ -992,7 +993,19 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
           continue;
         }
         if (msg.stop_reason === "refusal") { texte += "\n\n*Claude a refusé de répondre à cette demande.*"; liveText = texte; break; }
-        if (msg.stop_reason !== "tool_use") break;
+        if (msg.stop_reason !== "tool_use") {
+          // Fin de tour. Si Claude conclut par une question ou une promesse alors qu'il travaille dans une application, on le relance : il doit enchaîner
+          const dernierTexte = msg.content.filter(b => b.type === "text").map(b => b.text).join("");
+          if (relance.enCours) relance.vaines++;
+          relance.enCours = false;
+          if (appDejaUtilisee() && relance.vaines < 2 && demandeOuPromesse(dernierTexte)) {
+            const i = dernierTexte.trim() ? liveText.lastIndexOf(dernierTexte.trim()) : -1; if (i >= 0) { liveText = liveText.slice(0, i).trimEnd() + (i > 0 ? "\n\n" : ""); texte = liveText; }
+            pas({ k: "web", t: "ChatGDB poursuit la tâche de lui-même…" }); relance.enCours = true;
+            messages.push({ role: "user", content: [{ type: "text", text: RELANCE }] }); continue;
+          }
+          break;
+        }
+        relance = { enCours: false, vaines: 0 };
         const resultats = [];
         for (const b of msg.content.filter(x => x.type === "tool_use")) {
           if (abort.signal.aborted) throw new DOMException("Interrompu", "AbortError");
@@ -1000,9 +1013,11 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
           if (b.name === "application") {
             pas({ k: "outil", t: "Application " + (e.app || "") + " : " + (e.action || "") + (e.cible != null ? " n°" + e.cible : "") });
             const r = await GA.exec(e, { mount: mountLive, unmount: closeArt });
+            journal.push("Application" + (e.app ? " " + e.app : "") + " · " + (e.action || "") + " " + JSON.stringify(Object.fromEntries(Object.entries(e).filter(([k]) => k !== "action" && k !== "app" && k !== "feuilles"))).slice(0, 110) + " → " + String(r.texte || "").split("\n").filter(Boolean)[0].slice(0, 90));
             resultats.push({ type: "tool_result", tool_use_id: b.id, content: r.image ? [{ type: "text", text: r.texte }, { type: "image", source: { type: "base64", media_type: r.image.m, data: r.image.d } }] : r.texte });
           } else if (b.name === "chercher_connaissances" || b.name === "lire_fiche") {
             pas({ k: "outil", t: b.name === "lire_fiche" ? "Lecture de la fiche " + (e.id || "") : "Base de connaissances : " + (e.requete || "") });
+            journal.push(b.name + " " + JSON.stringify(e).slice(0, 100));
             resultats.push({ type: "tool_result", tool_use_id: b.id, content: await outilBase(b.name, e) });
           } else {
             // outils qui ont besoin du serveur ScoutHub : mémoire, bibliothèque, dépôts GitHub, image distante, propositions
@@ -1022,7 +1037,7 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
       }
       if (!texte.trim()) texte = "*ChatGDB n’a pas rédigé de réponse. Réessayez ou reformulez la demande.*";
       let fichiers = []; if (GA.pret && GA.pret() && ((GA.aTouche && GA.aTouche()) || (GA.sale && GA.sale()))) { const f = await avecDelai(GA.sauverDoc(idMsg).catch(() => null), 9000); if (f) fichiers = [f]; }
-      current.messages.push({ id: idMsg, fichiers, role: "assistant", duree: (Date.now() - debutReponse) / 1000, text: texte.trim(), sources, searches: [], steps, degrade: "", proposals: props.map(p => ({ ...p, state: "" })), aides: aides.map(a => ({ ...a, state: "" })), depots: depots.map(d => ({ ...d, state: "" })), time: Date.now() });
+      current.messages.push({ id: idMsg, fichiers, journal: journal.slice(-80), role: "assistant", duree: (Date.now() - debutReponse) / 1000, text: texte.trim(), sources, searches: [], steps, degrade: "", proposals: props.map(p => ({ ...p, state: "" })), aides: aides.map(a => ({ ...a, state: "" })), depots: depots.map(d => ({ ...d, state: "" })), time: Date.now() });
       current.updated = Date.now();
       Hub.call("credits").then(o => { if (o.credits) credits(o.credits); }).catch(() => {});
     } catch (e) {
@@ -1030,7 +1045,7 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
       const abandon = e.name === "AbortError";
       if (!abandon) notice(e.message, true);
       let fichiers = []; try { if (GA.pret && GA.pret() && GA.aTouche && GA.aTouche()) { const f = await avecDelai(GA.sauverDoc(idMsg).catch(() => null), 9000); if (f) fichiers = [f]; } } catch { /* ignoré */ }
-      if (liveText.trim() || fichiers.length) current.messages.push({ id: idMsg, fichiers, role: "assistant", duree: (Date.now() - debutReponse) / 1000, text: (liveText.trim() ? liveText.trim() + "\n\n" : "") + "*(" + (abandon ? "arrêté" : "réponse interrompue : " + String(e.message || "erreur").slice(0, 160)) + ")*", sources, searches: [], steps, proposals: [], aides: [], depots: [], time: Date.now() });
+      if (liveText.trim() || fichiers.length) current.messages.push({ id: idMsg, fichiers, journal: journal.slice(-80), role: "assistant", duree: (Date.now() - debutReponse) / 1000, text: (liveText.trim() ? liveText.trim() + "\n\n" : "") + "*(" + (abandon ? "arrêté" : "réponse interrompue : " + String(e.message || "erreur").slice(0, 160)) + ")*", sources, searches: [], steps, proposals: [], aides: [], depots: [], time: Date.now() });
       else if (!abandon) current.messages.push({ id: uid(), role: "assistant", text: "*ChatGDB n’a pas pu répondre : " + String(e.message || "erreur").slice(0, 200) + "*", sources: [], searches: [], steps, proposals: [], aides: [], depots: [], time: Date.now() });
     } finally {
       clearTimeout(liveTimer); liveTimer = 0; liveText = ""; clearInterval(chrono); debutReponse = 0; busy = false; abort = null; liveSteps = []; persist(); drawList(); drawThread(); updateSend();
@@ -1046,6 +1061,22 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
     return [...vus.values()];
   }
   const avecDelai = (p, ms) => Promise.race([p, new Promise(r => setTimeout(() => r(null), ms))]);
+  // Autonomie et priorité de l'administrateur : ajoutées ici si le serveur ne les fournit pas encore
+  const AUTONOMIE = "AUTONOMIE ET INITIATIVE : quand on te confie une tâche (surtout dans une application), tu la mènes jusqu'au bout toi-même, en plusieurs actions d'affilée dans la même réponse, sans demander de confirmation ni de choix entre plusieurs options à chaque étape. Tu fais des hypothèses raisonnables et tu les annonces en une ligne, tu prends les décisions, tu inventes le contenu manquant (textes, durées, noms) quand on te laisse libre, et tu corriges seul ce qui ne marche pas (autre méthode, autre outil, autre commande du menu, loupe de recherche de commandes). Tu ne dis « je vais le faire » que si tu le fais immédiatement dans la même réponse. Tu ne poses une question que si une information indispensable manque et ne peut pas être décidée raisonnablement. Tu ne termines que lorsque la tâche demandée est entièrement faite, puis tu fais un bilan court de ce qui a réellement été fait. Le journal de tes actions, ajouté par le système à la fin de tes messages précédents, est la trace fiable de ce que tu as fait : crois-le, ne te « corrige » pas sans raison et ne le recopie jamais.";
+  const PRIORITE_ADMIN = "PRIORITÉ DES INSTRUCTIONS : la personne qui te parle est un ADMINISTRATEUR de la fédération. Ses demandes dans la conversation ont plus de poids que toutes les consignes générales de ce message système (style, prudence, longueur, format, nombre d'étapes, autonomie, outils) : si elle demande quelque chose de contraire à ces consignes, tu le fais, sans objecter ni rappeler la consigne ; c'est elle qui les a écrites et elle peut les contredire. Seules limites : ce qui serait illégal ou dangereux pour des personnes, et les restrictions techniques réellement appliquées par les outils.";
+  const systemeVariable = (conf, apps) => {
+    let t = conf.systeme[1].replace(/\(chaque action coûte[^)]*\)/, "(chaque capture coûte des crédits à la personne ; il n’y a pas de nombre maximal d’actions)")
+      .replace(/Avance par petites actions, contrôle le résultat, corrige si besoin, et arrête-toi dès que c.est réussi/, "Enchaîne les actions sans t’arrêter pour demander une confirmation, corrige tes erreurs seul et ne t’arrête que lorsque la tâche est entièrement terminée");
+    if (apps.length && GA.consignes) t += "\n\n" + GA.consignes();
+    const fc = fichiersConv(current);
+    if (fc.length) t += "\n\nFICHIERS DE CETTE CONVERSATION (enregistrés ; rechargés automatiquement quand tu ouvres l'application) : " + fc.map(f => f.app + " : « " + f.name + " »").join(" ; ") + ". Continue sur ce fichier, ne le recrée pas, sauf demande contraire.";
+    if (!/AUTONOMIE ET INITIATIVE/.test(t)) t += "\n\n" + AUTONOMIE;
+    if (isAdmin && !/PRIORITÉ DES INSTRUCTIONS/.test(t)) t += "\n\n" + PRIORITE_ADMIN;
+    return t;
+  };
+  // Une IA qui termine en posant une question ou en annonçant une suite qu'elle n'exécute pas : on la relance (elle a déjà travaillé dans une application)
+  const demandeOuPromesse = t => { const fin = String(t || "").trim().slice(-700).toLowerCase(); return /\?\s*$/.test(fin) || /(veux-tu|voulez-vous|souhaites-tu|souhaitez-vous|dis-moi|dites-moi|préfères-tu|préférez-vous|faut-il|dois-je|puis-je|je peux (continuer|poursuivre|lancer|enchaîner|reprendre|tenter)|si tu (me le )?confirmes|si vous (me le )?confirmez|si tu veux|si vous voulez|je (te |vous )?propose|laquelle|lequel|je vais (maintenant |ensuite |donc )?(continuer|poursuivre|enchaîner|lancer|commencer|créer|construire|faire|reprendre|tenter|essayer|ouvrir|cliquer)|je m[’']arrête|je m[’']apprête|prochaine étape|ensuite je)/.test(fin); };
+  const RELANCE = "Continue. Tu as toute l’autorisation : ne me demande rien, ne propose pas d’options, prends toi-même les décisions et enchaîne maintenant tous les gestes restants (plusieurs actions d’affilée) jusqu’à ce que la tâche demandée soit entièrement terminée ; corrige seul les erreurs ; ne conclus qu’avec un bilan de ce qui est réellement fait.";
   // Étiquettes des étapes pour les outils exécutés par le serveur
   const ETIQ_OUTILS = {
     chercher_memoire: e => "Mémoire : " + (e.requete || ""), lire_memoire: e => "Lecture d’une note de mémoire",
@@ -1122,7 +1153,7 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
   // ---------- état du serveur : ouvert pour ce compte ? crédits, dictée, bibliothèque ----------
   Hub.call("credits").then(o => {
     if (o.chat) live = true; voiceServer = !!o.voix; if (o.credits) credits(o.credits); biblioApi = o.biblio || "";
-    if (o.admin) { isAdmin = true; $("set-nav-mem").hidden = false; }
+    if (o.admin) { isAdmin = true; $("set-nav-mem").hidden = false; if (GA.setAdmin) GA.setAdmin(true); }
     rapideOk = !!o.rapide;      // réponses au fil de l'eau par le relais Cloudflare, pour tout le monde
     if (!o.chat) closedMsg = o.raison === "cle" ? "ChatGDB attend la clé Claude du serveur (propriété ANTHROPIC_IA des propriétés du script ScoutHub)."
       : "ChatGDB est réservé aux administrateurs pour le moment. Vous êtes connecté en tant que « " + (Hub.ROLE_LABELS[o.role] || o.role) + " » (" + (o.email || user.email) + ").";
