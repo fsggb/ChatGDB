@@ -10,7 +10,7 @@ sources:
     url: https://github.com/DivinumOfficium/divinum-officium
 mots_cles: Divinum Officium, messe, bréviaire, office divin, latin, missel 1962, rubriques 1960, Laudes, Vêpres, Complies, Matines, Prime, Tierce, Sexte, None, introït, épître, évangile, offertoire, canon, communion, messe votive, défunts, messes de Noël, traduction française, hors connexion, application installable, FSSPX, liturgie
 liens: app-scouthub, app-chatgdb
-resume: Application de ScoutHub : la messe du jour (propre et ordinaire, avec traduction française) et les huit heures du bréviaire, en latin, selon les rubriques de 1960. Recherche, parties repliables, communs et messes votives, lecture sans connexion, installable sur téléphone.
+resume: Application de ScoutHub : la messe du jour (propre et ordinaire, avec traduction française des textes variables) et les huit heures du bréviaire, en latin, selon les rubriques de 1960. Recherche, parties repliables, communs et messes votives, lecture sans connexion, installable sur téléphone.
 ---
 
 ## À quoi sert Divinum Officium
@@ -29,14 +29,14 @@ Application de lecture de la liturgie traditionnelle, **en latin, selon les rubr
 La page de la messe est découpée en **parties**, comme dans un missel : Ouverture (prières au bas de l'autel), Introït, Kyrie, Gloria, Collecte, Épître, Graduel (ou Trait, Alléluia, Séquence), Évangile, Credo, Offertoire, Secrète, Préface, Canon, préparation à la communion, Communion, Postcommunion, Conclusion, Prières après la messe (Léon XIII). Chaque partie se replie.
 - Sur **ordinateur**, la liste des parties est un **sommaire à gauche** (onglets verticaux) ; sur **téléphone**, une barre collante donne la partie en cours, avec les flèches précédent/suivant et un bouton qui ouvre la liste complète.
 - **Propre du jour seulement** : cache l'ordinaire (prières au bas de l'autel, Credo, Canon…) pour ne garder que ce qui change chaque jour (Introït, Collecte, Épître, Graduel, Évangile, Offertoire, Secrète, Préface, Communion, Postcommunion).
-- **Traduction française** : pour chaque partie, un petit sélecteur *Latin / Les deux / Français* ; un réglage global (menu des parties, ou « LA / FR » sur téléphone) change toutes les parties d'un coup, et la langue choisie est gardée.
+- **Traduction française** : proposée seulement pour les textes qui changent d'un jour à l'autre : Introït, Collecte, Épître, Graduel ou Trait, Évangile, Offertoire, Secrète, Communion, Postcommunion. Chacune a son petit sélecteur *Latin / Les deux / Français*. Pas de traduction pour le Kyrie, le Gloria, le Credo, la Préface ni le Canon, et pas de bascule globale : le choix se fait partie par partie.
 - **Autres messes** : pour les jours qui comptent plusieurs messes (Noël : nuit, aurore, jour ; Commémoration des fidèles défunts : trois messes ; samedi des Quatre-Temps : forme longue ou brève), un sélecteur en haut de la page. Sont aussi disponibles, pour les **7 jours à partir d'aujourd'hui**, les **communs des saints** (un ou plusieurs martyrs, confesseurs, docteurs, vierges, abbés, dédicace d'église), la **messe des défunts**, les **fêtes de la Sainte Vierge** et des **messes votives** (saint Joseph, Passion, élection du pape, propagation de la foi). La liste est celle que gère le moteur d'origine ; la Sainte Trinité, le Saint-Esprit ou les Anges n'y figurent pas.
 
 ## Le bréviaire (office divin)
 Les **huit heures** : Matines, Laudes, Prime, Tierce, Sexte, None, Vêpres, Complies, en latin. Chaque heure est découpée en parties (Ouverture, Psaumes, Hymne, Capitule, Cantique, Oraison, Conclusion, Antienne mariale…) repliables, avec un bouton « Replier les psaumes » pour raccourcir. À la fin de chaque heure, un bouton propose l'heure suivante. Il n'y a pas de traduction française du bréviaire.
 
 ## Réglages
-Taille du texte (7 niveaux), thème (automatique, clair, sombre), langue du texte propre de la messe, garder l'écran allumé pendant la lecture, installation et lecture hors connexion.
+Taille du texte (7 niveaux), thème (automatique, clair, sombre), garder l'écran allumé pendant la lecture, installation et lecture hors connexion.
 
 ## Installer l'application et lire sans connexion
 - **Installable** comme une application (Android, ordinateur : menu du navigateur « Installer l'application » ; iPhone et iPad : bouton Partager, puis « Sur l'écran d'accueil »). Un bouton d'installation apparaît dans les réglages et sur l'accueil quand le navigateur le permet.
