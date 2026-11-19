@@ -69,6 +69,7 @@
     <h2>Dictée vocale en direct</h2>
     <p class="mu">Appuyez une seule fois sur « Démarrer » et parlez : le texte s’écrit au fil de la parole, phrase après phrase (Whisper, Cloudflare), sans rien envoyer ni valider. La dictée du navigateur tourne en parallèle pour comparer le délai et la qualité. L’audio n’est conservé nulle part.</p>
     <div class="ligne">
+      <fieldset class="modes"><legend>Mode</legend><label><input type="radio" name="d-mode" value="hybride" checked> Hybride : texte instantané du navigateur, corrigé par l’IA à chaque pause</label><label><input type="radio" name="d-mode" value="ia"> IA seule (aperçu IA pendant la phrase)</label><label><input type="radio" name="d-mode" value="navigateur"> Navigateur seul (sans IA)</label></fieldset>
       <button type="button" id="d-enreg" class="primaire">Démarrer la dictée</button>
       <button type="button" id="d-stop" disabled>Arrêter</button>
       <button type="button" id="d-copier">Copier le texte</button>
@@ -76,8 +77,8 @@
       <span id="d-duree" class="mu" aria-live="polite"></span>
     </div>
     <div class="deux">
-      <div class="carte"><h3>Whisper (Cloudflare)</h3><p id="d-w-meta" class="mu">—</p><p id="d-w-texte" class="texte" aria-live="polite"></p></div>
-      <div class="carte"><h3>Navigateur</h3><p id="d-n-meta" class="mu">—</p><p id="d-n-texte" class="texte" aria-live="polite"></p></div>
+      <div class="carte"><h3>Texte dicté</h3><p id="d-w-meta" class="mu">—</p><p id="d-w-texte" class="texte" aria-live="polite"></p></div>
+      <div class="carte"><h3>Mesures de rapidité</h3><p id="d-n-meta" class="mu">—</p><p id="d-n-texte" class="texte" aria-live="polite"></p></div>
     </div>
   </section>
 

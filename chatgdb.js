@@ -782,30 +782,34 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
   // dictée vocale : moteur partagé (dictee.js). Claude (API) ne transcrit pas la parole : le micro est écouté en continu, chaque phrase est envoyée à Whisper
   // (relais Cloudflare de ScoutHub) et son texte s'écrit à la suite, sans rien valider. Repli : la dictée du navigateur, quand il en a une.
   const micBtn = $("mic"), dictBar = $("dict"), dictMsg = $("dict-msg"), dictNiv = $("dict-niv"), dictTemps = $("dict-temps");
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition; let dict = null, rec = null, relaisDict = null, posDict = 0, dictDebut = 0;
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition; let dict = null, rec = null, relaisDict = null, dictDebut = 0;
   const micState = on => { micBtn.classList.toggle("rec", on); micBtn.title = on ? "Arrêter la dictée" : "Dicter"; micBtn.setAttribute("aria-label", on ? "Arrêter la dictée" : "Dicter votre message"); micBtn.setAttribute("aria-pressed", String(on)); dictBar.hidden = !on; if (!on) dictNiv.style.width = "0"; };
   async function relaisDictee(force) {
     if (relaisDict && !force && Date.now() < relaisDict.expire) return relaisDict;
     const o = await Hub.call("rapide", {}); if (!o.relais || !o.jeton) throw new Error("Dictée vocale indisponible : le relais Cloudflare n’est pas configuré.");
     relaisDict = { base: o.relais.replace(/\/chat\/?$/, "").replace(/\/$/, ""), jeton: o.jeton, expire: Date.now() + 12 * 60000 }; return relaisDict;
   }
-  async function transcrire(wav, secondes, essai = 0) {
+  async function transcrire(wav, secondes, opts, essai = 0) {
     const c = await relaisDictee(essai > 0);
-    const res = await fetch(c.base + "/dictee", { method: "POST", headers: { "content-type": "application/json", "x-scouthub-jeton": c.jeton }, body: JSON.stringify({ audio: wav, duree: secondes, langue: "fr" }) });
-    if (res.status === 401 && essai < 1) return transcrire(wav, secondes, 1);
+    const res = await fetch(c.base + "/dictee", { method: "POST", headers: { "content-type": "application/json", "x-scouthub-jeton": c.jeton }, body: JSON.stringify({ audio: wav, duree: secondes, langue: "fr", apercu: !!(opts && opts.apercu) }) });
+    if (res.status === 401 && essai < 1) return transcrire(wav, secondes, opts, 1);
     let o; try { o = await res.json(); } catch { throw new Error("Réponse invalide du serveur (" + res.status + ")."); }
     if (!res.ok || o.ok === false) throw new Error((o.error && o.error.message) || (typeof o.error === "string" ? o.error : "") || "Erreur " + res.status);
     return o;
   }
-  // Le texte s'insère à l'endroit du curseur (puis à la suite), avec les espaces qu'il faut
-  function insererDicte(t) {
-    const v = input.value, p = Math.min(posDict, v.length), avant = v.slice(0, p), apres = v.slice(p), sep = avant && !/\s$/.test(avant) ? " " : "", fin = apres && !/^\s/.test(apres) ? " " : "";
-    input.value = avant + sep + t + fin + apres; posDict = (avant + sep + t).length; try { input.setSelectionRange(posDict, posDict); } catch { /* ignoré */ } autosize();
+  // Le texte dicté occupe une zone du champ, à l'endroit du curseur ; elle est réécrite à chaque mise à jour (texte du navigateur provisoire, remplacé par celui de l'IA).
+  let baseDict = "", apresDict = "", champDict = "";
+  function afficherDicte(full) {
+    const sep = baseDict && full && !/\s$/.test(baseDict) ? " " : "", fin = apresDict && full && !/^\s/.test(apresDict) ? " " : "";
+    champDict = baseDict + sep + full + fin + apresDict; input.value = champDict;
+    const c = (baseDict + sep + full).length; try { input.setSelectionRange(c, c); } catch { /* ignoré */ } autosize();
   }
+  // La personne modifie le champ à la main pendant la dictée : ce qui est écrit devient définitif, la dictée continue à partir du curseur
+  input.addEventListener("input", () => { if (dict && input.value !== champDict) { const c = input.selectionStart == null ? input.value.length : input.selectionStart; baseDict = input.value.slice(0, c); apresDict = input.value.slice(c); champDict = input.value; dict.reinitialiser(); } });
   function etatDictee(e) {
     dictNiv.style.width = Math.round(Math.min(1, e.niveau) * 100) + "%";
     const s = Math.round(e.secondes); dictTemps.textContent = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
-    dictMsg.textContent = e.phase === "parole" ? "Je vous entends…" : e.enAttente ? "Transcription…" : e.phase === "fin" ? "Terminé" : "Je vous écoute : parlez, faites une pause à chaque phrase";
+    dictMsg.textContent = e.phase === "fin" ? "Terminé" : e.phase === "parole" ? "Je vous entends…" : e.enAttente ? "L’IA corrige la phrase…" : e.navigateur ? "Je vous écoute : le texte s’affiche tout de suite, l’IA le corrige à chaque pause" : "Je vous écoute : aperçu en direct, correction par l’IA à chaque pause";
   }
   function dicteeNavigateur() {
     rec = new SR(); rec.lang = "fr-FR"; rec.interimResults = true; rec.continuous = true; rec._actif = true; const base = input.value ? input.value.replace(/\s*$/, " ") : "";
@@ -820,13 +824,13 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
   }
   async function toggleMic() {
     if (dict || rec) return arreterDictee();
-    posDict = input.selectionStart == null ? input.value.length : input.selectionStart; if (document.activeElement !== input) posDict = input.value.length;
+    const posDict = input.selectionStart == null ? input.value.length : (document.activeElement !== input ? input.value.length : input.selectionStart); baseDict = input.value.slice(0, posDict); apresDict = input.value.slice(posDict); champDict = input.value;
     if (window.GDBDictee && GDBDictee.supporte()) {
       try { await relaisDictee(); }                       // le relais doit répondre avant d'ouvrir le micro
       catch (e) { if (SR) { toast("Dictée vocale du serveur indisponible (" + e.message + ") : dictée du navigateur."); return dicteeNavigateur(); } toast(e.message); return; }
       try {
         dictDebut = Date.now(); micState(true); dictMsg.textContent = "Ouverture du micro…";
-        dict = await GDBDictee.demarrer({ transcrire, onTexte: insererDicte, onEtat: etatDictee, maxSecondes: 600,
+        dict = await GDBDictee.demarrer({ transcrire, onTexte: afficherDicte, onEtat: etatDictee, maxSecondes: 600, mode: "hybride", onFin: () => { if (dict) { dict = null; micState(false); input.focus(); } },
           onErreur: m => { toast(m); if (/limite|suspendue/i.test(m) && SR && !rec) { dict = null; micState(false); dicteeNavigateur(); } } });
       } catch (e) { dict = null; micState(false); toast(e.message); }
       return;
