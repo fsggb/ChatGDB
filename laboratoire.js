@@ -174,63 +174,35 @@
       return { blob: new Blob([out], { type: "audio/wav" }), duree: r.duration };
     });
   }
-  // Dictée en direct : le micro est écouté en continu ; à chaque pause de parole (0,7 s de silence) ou après 14 s, la phrase est envoyée à Whisper
-  // et son texte s'ajoute aussitôt à la suite. Rien à valider. Le bruit de fond est mesuré en continu pour ajuster le seuil de parole.
-  const pcmVersWav = (pcm, taux) => {
-    const ratio = taux / 16000, n = Math.floor(pcm.length / ratio), sortie = new DataView(new ArrayBuffer(44 + n * 2));
-    const ecrire = (o, t) => [...t].forEach((c, i) => sortie.setUint8(o + i, c.charCodeAt(0)));
-    ecrire(0, "RIFF"); sortie.setUint32(4, 36 + n * 2, true); ecrire(8, "WAVEfmt "); sortie.setUint32(16, 16, true); sortie.setUint16(20, 1, true); sortie.setUint16(22, 1, true);
-    sortie.setUint32(24, 16000, true); sortie.setUint32(28, 32000, true); sortie.setUint16(32, 2, true); sortie.setUint16(34, 16, true); ecrire(36, "data"); sortie.setUint32(40, n * 2, true);
-    for (let i = 0; i < n; i++) { let somme = 0, k0 = Math.floor(i * ratio), k1 = Math.max(k0 + 1, Math.floor((i + 1) * ratio)); for (let k = k0; k < k1; k++) somme += pcm[k] || 0; sortie.setInt16(44 + i * 2, Math.max(-1, Math.min(1, somme / (k1 - k0))) * 32767, true); }
-    return new Blob([sortie], { type: "audio/wav" });
-  };
+  // Dictée en direct : moteur partagé avec ChatGDB (dictee.js). Le micro est écouté en continu ; à chaque pause de parole (0,8 s) ou après 24 s, la phrase est
+  // envoyée à Whisper et son texte s'ajoute aussitôt à la suite. Rien à valider. Le bruit de fond est mesuré en continu ; sans parole, rien n'est envoyé.
   const base64 = blob => new Promise((ok, ko) => { const f = new FileReader(); f.onload = () => ok(String(f.result).split(",")[1]); f.onerror = () => ko(new Error("Lecture de l’audio impossible.")); f.readAsDataURL(blob); });
-  const D = { E: null, texte: "", neurons: 0, nb: 0, reco: null, texteNav: "", chrono: 0, debut: 0 };
+  const D = { E: null, texte: "", neurons: 0, nb: 0, reco: null, texteNav: "", chrono: 0, debut: 0, fin: 0 };
   const afficherDictee = () => { $("d-w-texte").textContent = D.texte; };
-  async function envoyerSegment(wav, duree, finParole) {
-    $("d-w-meta").textContent = "Transcription…";
-    try {
-      const o = await ia("/dictee", { audio: await base64(wav), duree, langue: "fr", force: $("c-force").checked });
-      const t = String(o.texte || "").trim();
-      if (t) { D.texte += (D.texte ? " " : "") + t; afficherDictee(); }
-      D.neurons += o.neurons || 0; D.nb++;
-      $("d-w-meta").textContent = "Dernière phrase : texte affiché " + ((performance.now() - finParole) / 1000).toFixed(1) + " s après la fin de la parole · " + D.nb + " phrase(s), " + arrondi(D.neurons, 1) + " Neurons";
-      noter("dictée", "Whisper : " + t.slice(0, 80), { whisper: t, delai_s: (performance.now() - finParole) / 1000, duree, navigateur: D.texteNav });
-    } catch (e) { $("d-w-meta").textContent = "Erreur : " + e.message; }
-  }
-  function finSegment(E) {
-    const seg = E.seg; E.seg = null; E.silence = 0; if (!seg || seg.voix < 0.25) return;         // bruit bref : ignoré
-    const total = seg.morceaux.reduce((n, m) => n + m.length, 0), pcm = new Float32Array(total); let o = 0; seg.morceaux.forEach(m => { pcm.set(m, o); o += m.length; });
-    const wav = pcmVersWav(pcm, E.taux), fin = performance.now();
-    E.file = E.file.then(() => envoyerSegment(wav, seg.duree, fin));
-  }
-  function traiter(E, d) {
-    let s = 0; for (let i = 0; i < d.length; i++) s += d[i] * d[i];
-    const rms = Math.sqrt(s / d.length), dur = d.length / E.taux, parle = rms > Math.max(0.012, E.bruit * 3);
-    if (!E.seg) {
-      if (!parle) E.bruit = E.bruit * 0.95 + rms * 0.05;
-      E.pre.push(d); if (E.pre.length > 3) E.pre.shift();
-      if (!parle) return;
-      E.seg = { morceaux: E.pre.slice(), duree: E.pre.reduce((n, m) => n + m.length, 0) / E.taux, voix: 0 }; E.pre = []; E.silence = 0;
-    } else { E.seg.morceaux.push(d); E.seg.duree += dur; }
-    if (parle) { E.silence = 0; E.seg.voix += dur; } else E.silence += dur;
-    if (E.silence >= 0.7 || E.seg.duree >= 14) finSegment(E);
-  }
   async function demarrerDictee() {
-    const flux = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-    const AC = window.AudioContext || window.webkitAudioContext, ctx = new AC(), src = ctx.createMediaStreamSource(flux), proc = ctx.createScriptProcessor(4096, 1, 1), muet = ctx.createGain();
-    muet.gain.value = 0; src.connect(proc); proc.connect(muet); muet.connect(ctx.destination);
-    const E = { flux, ctx, proc, src, taux: ctx.sampleRate, seg: null, pre: [], silence: 0, bruit: 0.004, file: Promise.resolve() };
-    proc.onaudioprocess = e => traiter(E, new Float32Array(e.inputBuffer.getChannelData(0)));
-    D.E = E; D.texte = ""; D.neurons = 0; D.nb = 0; D.texteNav = ""; afficherDictee(); $("d-n-texte").textContent = ""; $("d-w-meta").textContent = "Parlez…"; $("d-n-meta").textContent = "—";
+    D.texte = ""; D.neurons = 0; D.nb = 0; D.texteNav = ""; afficherDictee(); $("d-n-texte").textContent = ""; $("d-w-meta").textContent = "Ouverture du micro…"; $("d-n-meta").textContent = "—";
+    D.E = await GDBDictee.demarrer({
+      transcrire: async (wav, duree) => {
+        $("d-w-meta").textContent = "Transcription…"; const t0 = performance.now();
+        const o = await ia("/dictee", { audio: wav, duree, langue: "fr", force: $("c-force").checked }); D.neurons += o.neurons || 0; D.nb++;
+        noter("dictée", "Whisper : " + String(o.texte || "").slice(0, 80), { whisper: o.texte, delai_s: (performance.now() - t0) / 1000, duree, navigateur: D.texteNav });
+        $("d-w-meta").textContent = "Dernière phrase : " + ((performance.now() - t0) / 1000).toFixed(1) + " s de traitement pour " + duree.toFixed(1) + " s de voix · " + D.nb + " phrase(s), " + arrondi(D.neurons, 1) + " Neurons";
+        return o;
+      },
+      onTexte: t => { D.texte += (D.texte ? " " : "") + t; afficherDictee(); },
+      onEtat: e => { if (e.phase === "parole") $("d-w-meta").textContent = "Je vous entends…"; else if (e.phase === "ecoute" && !e.enAttente && !D.nb) $("d-w-meta").textContent = "Parlez…"; },
+      onErreur: m => { $("d-w-meta").textContent = "Erreur : " + m; },
+      maxSecondes: 900
+    });
     // dictée du navigateur en parallèle, pour comparer (résultats provisoires affichés au fil de la parole)
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SR) {
-      const debutNav = performance.now(); let finaux = "";
+      let finaux = "";
       try {
         const reco = new SR(); reco.lang = "fr-FR"; reco.continuous = true; reco.interimResults = true; D.reco = reco;
-        reco.onresult = ev => { let prov = ""; finaux = ""; for (const r of ev.results) { if (r.isFinal) finaux += r[0].transcript + " "; else prov += r[0].transcript; } D.texteNav = (finaux + prov).trim(); $("d-n-texte").textContent = D.texteNav; $("d-n-meta").textContent = "mis à jour " + ((performance.now() - debutNav) / 1000).toFixed(1) + " s après le début"; };
+        reco.onresult = ev => { let prov = ""; finaux = ""; for (const r of ev.results) { if (r.isFinal) finaux += r[0].transcript + " "; else prov += r[0].transcript; } D.texteNav = (finaux + prov).trim(); $("d-n-texte").textContent = D.texteNav; $("d-n-meta").textContent = "Navigateur : texte provisoire affiché au fil de la parole"; };
         reco.onend = () => { if (D.E) { try { reco.start(); } catch { /* arrêtée */ } } };    // le navigateur coupe seul après un silence : on relance
+        reco.onerror = () => { /* Brave, Firefox : pas de dictée navigateur */ };
         reco.start();
       } catch { D.reco = null; }
     } else $("d-n-meta").textContent = "Dictée du navigateur indisponible ici.";
@@ -240,9 +212,7 @@
   async function arreterDictee() {
     const E = D.E; if (!E) return; D.E = null; clearInterval(D.chrono); $("d-duree").textContent = "";
     try { D.reco && D.reco.stop(); } catch { /* ignoré */ } D.reco = null;
-    try { E.proc.onaudioprocess = null; E.src.disconnect(); E.proc.disconnect(); } catch { /* ignoré */ }
-    finSegment(E); await E.file;                                   // la dernière phrase est envoyée avant de fermer
-    E.flux.getTracks().forEach(t => t.stop()); try { await E.ctx.close(); } catch { /* ignoré */ }
+    await E.arreter();                                   // la dernière phrase est envoyée avant de fermer le micro
     $("d-enreg").disabled = false; $("d-stop").disabled = true;
   }
   $("d-enreg").onclick = async () => { try { await demarrerDictee(); } catch (e) { etat("Micro indisponible : " + e.message, true); } };
@@ -374,10 +344,46 @@
     $("o-liste").append(bloc);
   });
 
+  // ---------- images (Workers AI) : Claude ne génère pas d'images ; ces modèles le font ----------
+  let imagesCat = [];
+  const tuilesImg = (l, h) => Math.ceil(l / 512) * Math.ceil(h / 512);
+  const formatImg = () => $("i-format").value.split("x").map(Number);
+  function coutImage(m) { const [l, h] = formatImg(); return m.taille ? m.neurons * tuilesImg(l, h) / tuilesImg(m.largeur, m.hauteur) : m.neurons; }
+  const modelesImg = () => [...document.querySelectorAll("#i-modeles input:checked")].map(c => imagesCat.find(m => m.id === c.value)).filter(Boolean);
+  function estimerImages() { const ms = modelesImg(), t = ms.reduce((n, m) => n + coutImage(m), 0); $("i-estim").textContent = ms.length ? ms.length + " modèle(s) : ≈ " + Math.round(t) + " Neurons (estimation)" : "Cochez au moins un modèle."; }
+  function dessinerImages() {
+    const z = $("i-modeles"); z.textContent = "";
+    imagesCat.forEach(m => { const c = el("input", { type: "checkbox", value: m.id }); c.checked = /flux-1-schnell|flux-2-klein-4b/.test(m.id); c.onchange = estimerImages; z.append(el("label", {}, c, document.createTextNode(m.nom), el("small", { textContent: " ≈ " + Math.round(m.neurons) + " Neurons" + (m.neurons > 600 ? " (cher)" : "") }))); });
+    estimerImages();
+  }
+  $("i-format").onchange = estimerImages;
+  function carteImage(m) {
+    const meta = el("p", { className: "mu", textContent: "Génération…" }), zone = el("div", { className: "img-zone" }), carte = el("div", { className: "carte" }, el("h3", { textContent: m.nom }), zone, meta);
+    $("i-resultats").prepend(carte); return { carte, zone, meta };
+  }
+  async function genererImages(opts = {}) {
+    const prompt = String(opts.prompt != null ? opts.prompt : $("i-prompt").value).trim(); if (!prompt) { etat("Décrivez l’image à générer.", true); return []; }
+    const ms = opts.modeles ? imagesCat.filter(m => opts.modeles.includes(m.id)) : modelesImg(); if (!ms.length) { etat("Cochez au moins un modèle d’image.", true); return []; }
+    const [l, h] = opts.format ? String(opts.format).split("x").map(Number) : formatImg(), sorties = []; $("i-lancer").disabled = true;
+    for (const m of ms) {
+      const c = carteImage(m); etat("Génération avec " + m.nom + "…");
+      try {
+        const o = await ia("/image", { model: m.id, prompt, largeur: l, hauteur: h, pas: +$("i-pas").value || undefined, seed: $("i-seed").value, negatif: $("i-neg").value, confirmer: $("i-confirmer").checked || !!opts.confirmer, force: $("c-force").checked });
+        const url = "data:" + o.mime + ";base64," + o.image, img = el("img", { src: url, alt: prompt.slice(0, 120), loading: "lazy" });
+        c.zone.append(img); c.meta.textContent = o.largeur + "×" + o.hauteur + " · " + arrondi(o.ms / 1000, 1) + " s · ≈ " + o.neurons + " Neurons (estimation) · " + Math.round(o.image.length * 0.75 / 1024) + " Ko";
+        const dl = el("a", { className: "btn", href: url, download: "image-" + m.id.split("/").pop() + (o.mime === "image/png" ? ".png" : ".jpg"), textContent: "Télécharger" }); c.carte.append(dl);
+        noter("image", m.nom + " : " + prompt.slice(0, 70), { modele: m.id, ms: o.ms, neurons: o.neurons, taille: o.largeur + "×" + o.hauteur }); sorties.push({ modele: m.id, mime: o.mime, ms: o.ms, neurons: o.neurons, largeur: o.largeur, hauteur: o.hauteur, taille_ko: Math.round(o.image.length * 0.75 / 1024) });
+      } catch (e) { c.meta.textContent = "Erreur : " + e.message; c.meta.classList.add("ko"); sorties.push({ modele: m.id, erreur: e.message }); }
+    }
+    $("i-lancer").disabled = false; etat("Images terminées."); try { await ia("/modeles", {}); } catch { /* le budget se mettra à jour au prochain appel */ }
+    return sorties;
+  }
+  $("i-lancer").onclick = () => genererImages();
+
   // ---------- démarrage ----------
   dessinerJournal();
   try {
-    const o = await ia("/modeles", {}); catalogue = o.modeles;
+    const o = await ia("/modeles", {}); catalogue = o.modeles; imagesCat = o.images || []; dessinerImages();
     // Dernières versions de Claude, demandées au relais (il envoie d'ailleurs toujours chaque requête à la dernière version de la famille)
     try { const r = await (await appel("/claude/modeles", {})).json(); if (r.modeles && r.modeles.length) CLAUDE = r.modeles.map(m => [m.id, m.nom, m.prix[0], m.prix[1]]); } catch { /* liste de secours */ }
     dessinerModeles();
@@ -401,6 +407,7 @@
     modeles: () => catalogue.map(m => m.id).concat(CLAUDE.map(c => c[0])),
     onglet,
     async comparer({ q, systeme = "", modeles = "rapides", temp = 0, max = 800, force = false, fiches = true }) { onglet("comparer"); $("c-q").value = q; $("c-systeme").value = systeme; $("c-fiches").checked = fiches !== false; choisirModeles(modeles); return comparer({ ...lire(), q, systeme, temp, max, force, fiches }); },
+    async image(o) { onglet("images"); if (o && o.prompt) $("i-prompt").value = o.prompt; return genererImages(o || {}); },
     async voix(texte) { onglet("voix"); $("v-texte").value = texte; return lireVoix(texte); },
     async chercher(q) { onglet("recherche"); $("r-q").value = q; return chercher(q); },
     indexer

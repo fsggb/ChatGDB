@@ -448,11 +448,22 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
     (m.fichiers || []).forEach(f => body.append(fichierCard(f, conv)));
     return body;
   }
+  // Fichiers à joindre sous la réponse : TOUJOURS une carte « Ouvrir / Télécharger » quand un document a été créé ou modifié. 1) enregistrement direct (jusqu'à 12 s, deux essais) ;
+  // 2) à défaut, le dernier enregistrement de la conversation (le volet a pu être fermé entre-temps).
+  async function fichiersDuMessage(idMsg) {
+    const extras0 = GA.extras ? GA.extras() : [];
+    if (!(GA.aTouche && GA.aTouche()) && !(GA.sale && GA.sale())) return extras0;
+    let f = null;
+    for (let essai = 0; essai < 2 && !f; essai++) { try { if (GA.pret && GA.pret()) f = await avecDelai(GA.sauverDoc(idMsg).catch(() => null), 12000); } catch { /* ignoré */ } }
+    if (!f && GA.fichierRecent) { try { f = await GA.fichierRecent(idMsg); } catch { /* ignoré */ } }
+    return (f ? [f] : []).concat(extras0, GA.extras ? GA.extras() : []);
+  }
   // Document de travail d'une application, gardé dans la conversation : rouvrable et téléchargeable à tout moment
   function fichierCard(f, conv) {
     const card = el("div", { className: "afc fich" }, el("span", { className: "ico", innerHTML: ic(f.appli === "gridcraft" ? "table" : "file") }),
-      el("span", {}, el("b", { textContent: f.name }), el("small", { textContent: f.app + " · enregistré dans la conversation" + (f.taille ? " · " + Math.max(1, Math.round(f.taille / 1024)) + " Ko" : "") })));
+      el("span", {}, el("b", { textContent: f.name }), el("small", { textContent: f.app + (f.extra ? " · fichier exporté" : " · enregistré dans la conversation") + (f.taille ? " · " + Math.max(1, Math.round(f.taille / 1024)) + " Ko" : "") })));
     const b1 = el("button", { className: "btn", type: "button", textContent: "Ouvrir" }), b2 = el("button", { className: "btn", type: "button", textContent: "Télécharger" });
+    if (f.extra) b1.hidden = true;
     b1.onclick = async () => { GA.setConv(conv.id, stockDocs); b1.disabled = true; b1.textContent = "Ouverture…"; const ok = await GA.rouvrir(f, { mount: mountLive, unmount: closeArt }).catch(() => false); b1.disabled = false; b1.textContent = "Ouvrir"; if (!ok) toast("Impossible de rouvrir ce fichier : essayez « Télécharger »."); };
     b2.onclick = async () => { GA.setConv(conv.id, stockDocs); if (!(await GA.telecharger(f).catch(() => false))) toast("Fichier introuvable sur cet appareil."); };
     card.append(el("span", { className: "fich-actions" }, b1, b2)); return card;
@@ -768,46 +779,63 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
   function autosize() { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 200) + "px"; $("count").textContent = input.value.length > 6000 ? input.value.length + " / 8000" : ""; updateSend(); }
   input.addEventListener("input", autosize);
   input.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); if (!busy) $("form").requestSubmit(); } });
-  // dictée vocale : on enregistre dans le navigateur (fonctionne partout, y compris Brave), le serveur transcrit.
-  let recorder = null, recStream = null, recTimer = 0;
-  const micBtn = $("mic");
-  const hasRec = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition; let rec = null;
-  const micState = on => { micBtn.classList.toggle("rec", on); micBtn.title = on ? "Arrêter la dictée" : "Dicter"; micBtn.setAttribute("aria-label", on ? "Arrêter la dictée" : "Dicter votre message"); };
-  // WAV 16 kHz mono 16 bits : format lu partout par le serveur de transcription
-  async function toWav(blob) {
-    const ctxA = new (window.AudioContext || window.webkitAudioContext)(); const buf = await ctxA.decodeAudioData(await blob.arrayBuffer()); ctxA.close && ctxA.close();
-    const rate = 16000, len = Math.max(1, Math.round(buf.duration * rate)), off = new OfflineAudioContext(1, len, rate), src = off.createBufferSource(); src.buffer = buf; src.connect(off.destination); src.start();
-    const pcm = (await off.startRendering()).getChannelData(0), view = new DataView(new ArrayBuffer(44 + pcm.length * 2)), w = (o, s) => [...s].forEach((c, i) => view.setUint8(o + i, c.charCodeAt(0)));
-    w(0, "RIFF"); view.setUint32(4, 36 + pcm.length * 2, true); w(8, "WAVEfmt "); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true); view.setUint32(24, rate, true); view.setUint32(28, rate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true); w(36, "data"); view.setUint32(40, pcm.length * 2, true);
-    for (let i = 0; i < pcm.length; i++) view.setInt16(44 + i * 2, Math.max(-1, Math.min(1, pcm[i])) * 0x7fff, true);
-    return new Blob([view], { type: "audio/wav" });
+  // dictée vocale : moteur partagé (dictee.js). Claude (API) ne transcrit pas la parole : le micro est écouté en continu, chaque phrase est envoyée à Whisper
+  // (relais Cloudflare de ScoutHub) et son texte s'écrit à la suite, sans rien valider. Repli : la dictée du navigateur, quand il en a une.
+  const micBtn = $("mic"), dictBar = $("dict"), dictMsg = $("dict-msg"), dictNiv = $("dict-niv"), dictTemps = $("dict-temps");
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition; let dict = null, rec = null, relaisDict = null, posDict = 0, dictDebut = 0;
+  const micState = on => { micBtn.classList.toggle("rec", on); micBtn.title = on ? "Arrêter la dictée" : "Dicter"; micBtn.setAttribute("aria-label", on ? "Arrêter la dictée" : "Dicter votre message"); micBtn.setAttribute("aria-pressed", String(on)); dictBar.hidden = !on; if (!on) dictNiv.style.width = "0"; };
+  async function relaisDictee(force) {
+    if (relaisDict && !force && Date.now() < relaisDict.expire) return relaisDict;
+    const o = await Hub.call("rapide", {}); if (!o.relais || !o.jeton) throw new Error("Dictée vocale indisponible : le relais Cloudflare n’est pas configuré.");
+    relaisDict = { base: o.relais.replace(/\/chat\/?$/, "").replace(/\/$/, ""), jeton: o.jeton, expire: Date.now() + 12 * 60000 }; return relaisDict;
   }
-  const b64 = blob => new Promise((ok, ko) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1]); r.onerror = ko; r.readAsDataURL(blob); });
-  async function transcribe(blob) {
-    micBtn.disabled = true; toast("Transcription en cours…");
-    try { const wav = await toWav(blob), out = await Hub.call("transcrire", { audio: await b64(wav) }); input.value = (input.value ? input.value.trimEnd() + " " : "") + out.text; autosize(); input.focus(); }
-    catch (e) { toast(/decode|EncodingError/i.test(e.message || e.name) ? "Enregistrement illisible : réessayez." : e.message); }
-    finally { micBtn.disabled = false; }
+  async function transcrire(wav, secondes, essai = 0) {
+    const c = await relaisDictee(essai > 0);
+    const res = await fetch(c.base + "/dictee", { method: "POST", headers: { "content-type": "application/json", "x-scouthub-jeton": c.jeton }, body: JSON.stringify({ audio: wav, duree: secondes, langue: "fr" }) });
+    if (res.status === 401 && essai < 1) return transcrire(wav, secondes, 1);
+    let o; try { o = await res.json(); } catch { throw new Error("Réponse invalide du serveur (" + res.status + ")."); }
+    if (!res.ok || o.ok === false) throw new Error((o.error && o.error.message) || (typeof o.error === "string" ? o.error : "") || "Erreur " + res.status);
+    return o;
   }
-  function nativeDictation() {
-    if (rec) { rec.stop(); return; }
-    rec = new SR(); rec.lang = "fr-FR"; rec.interimResults = false; rec.continuous = true; const base = input.value ? input.value + " " : "";
+  // Le texte s'insère à l'endroit du curseur (puis à la suite), avec les espaces qu'il faut
+  function insererDicte(t) {
+    const v = input.value, p = Math.min(posDict, v.length), avant = v.slice(0, p), apres = v.slice(p), sep = avant && !/\s$/.test(avant) ? " " : "", fin = apres && !/^\s/.test(apres) ? " " : "";
+    input.value = avant + sep + t + fin + apres; posDict = (avant + sep + t).length; try { input.setSelectionRange(posDict, posDict); } catch { /* ignoré */ } autosize();
+  }
+  function etatDictee(e) {
+    dictNiv.style.width = Math.round(Math.min(1, e.niveau) * 100) + "%";
+    const s = Math.round(e.secondes); dictTemps.textContent = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+    dictMsg.textContent = e.phase === "parole" ? "Je vous entends…" : e.enAttente ? "Transcription…" : e.phase === "fin" ? "Terminé" : "Je vous écoute : parlez, faites une pause à chaque phrase";
+  }
+  function dicteeNavigateur() {
+    rec = new SR(); rec.lang = "fr-FR"; rec.interimResults = true; rec.continuous = true; rec._actif = true; const base = input.value ? input.value.replace(/\s*$/, " ") : "";
     rec.onresult = e => { input.value = base + [...e.results].map(r => r[0].transcript).join(" "); autosize(); };
-    rec.onend = () => { rec = null; micState(false); }; rec.onerror = e => { rec = null; micState(false); toast(e.error === "not-allowed" ? "Micro refusé : autorisez-le dans le navigateur." : "La dictée de ce navigateur ne fonctionne pas ; l’administrateur doit activer la dictée serveur (GEMINI_IA)."); };
-    micState(true); try { rec.start(); } catch { rec = null; micState(false); }
+    rec.onend = () => { if (rec && rec._actif) { try { rec.start(); return; } catch { /* arrêtée */ } } rec = null; micState(false); };
+    rec.onerror = e => { if (e.error === "no-speech" || e.error === "aborted") return; if (rec) rec._actif = false; rec = null; micState(false); toast(e.error === "not-allowed" ? "Micro refusé : autorisez-le dans le navigateur." : "La dictée de ce navigateur ne fonctionne pas : utilisez la dictée du clavier de votre appareil."); };
+    micState(true); dictMsg.textContent = "Dictée du navigateur : parlez"; dictTemps.textContent = ""; try { rec.start(); } catch { rec = null; micState(false); }
+  }
+  async function arreterDictee() {
+    if (rec) { rec._actif = false; try { rec.stop(); } catch { /* ignoré */ } return; }
+    if (dict) { const d = dict; dict = null; dictMsg.textContent = "Dernière phrase…"; try { await d.arreter(); } catch { /* ignoré */ } micState(false); input.focus(); }
   }
   async function toggleMic() {
-    if (!voiceServer && SR) return nativeDictation();
-    if (recorder) { recorder.stop(); return; }
-    try { recStream = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch { toast("Micro refusé : autorisez-le dans le navigateur."); return; }
-    const type = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"].find(t => MediaRecorder.isTypeSupported(t)) || "";
-    const chunks = []; recorder = new MediaRecorder(recStream, type ? { mimeType: type } : {});
-    recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
-    recorder.onstop = () => { clearTimeout(recTimer); recStream.getTracks().forEach(t => t.stop()); const blob = new Blob(chunks, { type: recorder.mimeType || type }); recorder = null; micState(false); if (blob.size < 1500) { toast("Enregistrement trop court."); return; } transcribe(blob); };
-    recorder.start(); micState(true); toast("Parlez… (recliquez pour terminer, 90 s au plus)"); recTimer = setTimeout(() => recorder && recorder.stop(), 90000);
+    if (dict || rec) return arreterDictee();
+    posDict = input.selectionStart == null ? input.value.length : input.selectionStart; if (document.activeElement !== input) posDict = input.value.length;
+    if (window.GDBDictee && GDBDictee.supporte()) {
+      try { await relaisDictee(); }                       // le relais doit répondre avant d'ouvrir le micro
+      catch (e) { if (SR) { toast("Dictée vocale du serveur indisponible (" + e.message + ") : dictée du navigateur."); return dicteeNavigateur(); } toast(e.message); return; }
+      try {
+        dictDebut = Date.now(); micState(true); dictMsg.textContent = "Ouverture du micro…";
+        dict = await GDBDictee.demarrer({ transcrire, onTexte: insererDicte, onEtat: etatDictee, maxSecondes: 600,
+          onErreur: m => { toast(m); if (/limite|suspendue/i.test(m) && SR && !rec) { dict = null; micState(false); dicteeNavigateur(); } } });
+      } catch (e) { dict = null; micState(false); toast(e.message); }
+      return;
+    }
+    if (SR) return dicteeNavigateur();
+    toast("Ce navigateur ne permet pas la dictée.");
   }
-  if (hasRec || SR) { micBtn.hidden = false; micBtn.onclick = toggleMic; }
+  if ((window.GDBDictee && GDBDictee.supporte()) || SR) { micBtn.hidden = false; micBtn.onclick = toggleMic; $("dict-stop").onclick = arreterDictee; }
+  window.addEventListener("pagehide", () => { if (dict) dict.arreter(); });
 
 
   // ---------- appel au serveur ----------
@@ -1082,7 +1110,7 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
         if (liveText && !/\n$/.test(liveText)) liveText += "\n\n";
       }
       if (!texte.trim()) texte = "*ChatGDB n’a pas rédigé de réponse. Réessayez ou reformulez la demande.*";
-      let fichiers = []; if (GA.pret && GA.pret() && ((GA.aTouche && GA.aTouche()) || (GA.sale && GA.sale()))) { const f = await avecDelai(GA.sauverDoc(idMsg).catch(() => null), 9000); if (f) fichiers = [f]; }
+      const fichiers = await fichiersDuMessage(idMsg);
       current.messages.push({ id: idMsg, fichiers, journal: journal.slice(-80), role: "assistant", duree: (Date.now() - debutReponse) / 1000, text: texte.trim(), sources, searches: [], steps, degrade: "", proposals: props.map(p => ({ ...p, state: "" })), aides: aides.map(a => ({ ...a, state: "" })), depots: depots.map(d => ({ ...d, state: "" })), time: Date.now() });
       current.updated = Date.now();
       Hub.call("credits").then(o => { if (o.credits) credits(o.credits); }).catch(() => {});
@@ -1090,7 +1118,7 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
       // Ce qui a déjà été écrit est conservé (rien n'est perdu) ; la raison est indiquée dans la conversation
       const abandon = e.name === "AbortError";
       if (!abandon) notice(e.message, true);
-      let fichiers = []; try { if (GA.pret && GA.pret() && GA.aTouche && GA.aTouche()) { const f = await avecDelai(GA.sauverDoc(idMsg).catch(() => null), 9000); if (f) fichiers = [f]; } } catch { /* ignoré */ }
+      const fichiers = await fichiersDuMessage(idMsg).catch(() => []);
       if (liveText.trim() || fichiers.length) current.messages.push({ id: idMsg, fichiers, journal: journal.slice(-80), role: "assistant", duree: (Date.now() - debutReponse) / 1000, text: (liveText.trim() ? liveText.trim() + "\n\n" : "") + "*(" + (abandon ? "arrêté" : "réponse interrompue : " + String(e.message || "erreur").slice(0, 160)) + ")*", sources, searches: [], steps, proposals: [], aides: [], depots: [], time: Date.now() });
       else if (!abandon) current.messages.push({ id: uid(), role: "assistant", text: "*ChatGDB n’a pas pu répondre : " + String(e.message || "erreur").slice(0, 200) + "*", sources: [], searches: [], steps, proposals: [], aides: [], depots: [], time: Date.now() });
     } finally {
