@@ -9,7 +9,7 @@ sources:
   - titre: ScoutHub - fiche CHATGDB.md
     url: https://github.com/fsggb/ScoutHub/blob/main/CHATGDB.md
 mots_cles: applications, ScoutHub, quelle application, outil, bureautique, création, CAO, cartographie, panorama, liste, choisir
-liens: app-scouthub, app-chatgdb, app-scoutbibliotheque, app-scoutmap, app-cathia, app-soleadworks, app-solidcraft, app-cadcraft, app-word, app-excel, app-powerpoint, app-pdf, app-photoshop, app-illustrator, app-indesign, app-lightroom, app-figma, app-draw, app-premiere, app-aftereffects, app-protools, app-substancepainter
+liens: app-divinumofficium, app-scouthub, app-chatgdb, app-scoutbibliotheque, app-scoutmap, app-cathia, app-soleadworks, app-solidcraft, app-cadcraft, app-word, app-excel, app-powerpoint, app-pdf, app-photoshop, app-illustrator, app-indesign, app-lightroom, app-figma, app-draw, app-premiere, app-aftereffects, app-protools, app-substancepainter
 resume: Liste de toutes les applications de ScoutHub avec une ligne par application, leur adresse et le tableau des tâches scoutes courantes indiquant quelle application utiliser. Point d'entrée pour choisir le bon outil avant de lire la fiche détaillée.
 ---
 
@@ -44,6 +44,7 @@ resume: Liste de toutes les applications de ScoutHub avec une ligne par applicat
 | AutoCAD (Conception et CAO) | CADCraft | /ScoutHub/CADCraft/?lang=fr | dessin technique 2D, ligne de commande, DXF/DWG | app-cadcraft |
 | SolidWorks (Conception et CAO) | SolidCraft | /ScoutHub/SolidCraft/?lang=fr | CAO 3D paramétrique, STEP/STL/3MF | app-solidcraft |
 | Cartes IGN (Cartographie) | ScoutMap | /ScoutHub/ScoutMap/ | cartes IGN, itinéraires, azimuts, GPX, impression | app-scoutmap |
+| Divinum Officium (Vie spirituelle) | messe et bréviaire | /ScoutHub/DivinumOfficium/ | messe du jour et huit heures de l'office en latin, traduction française de la messe, hors connexion | app-divinumofficium |
 | Boutique GDB | boutique en ligne | https://boutique.fsggb.fr/ | uniformes, insignes, accessoires | (hors ScoutHub) |
 L'administrateur peut renommer, réordonner ou masquer des tuiles : l'accueil peut différer légèrement.
 
@@ -54,6 +55,7 @@ L'administrateur peut renommer, réordonner ou masquer des tuiles : l'accueil pe
 | Course d'orientation, azimuts | ScoutMap (type Azimuts) |
 | Carte de grand jeu sur fond IGN | ScoutMap (type Grand jeu) ; schéma simple : Excalidraw |
 | Concevoir une table, un banc, une construction de froissartage et vérifier qu'elle tient | CathIA |
+| Lire la messe du jour ou une heure du bréviaire (Laudes, Vêpres, Complies…), en latin, avec traduction française de la messe | Divinum Officium |
 | Plans d'un ensemble de meubles pour le coin de patrouille | SoLeadWorks (ou CathIA, plus complet aujourd'hui) |
 | Plan coté du terrain de camp ou d'un local | CADCraft |
 | Pièce à imprimer en 3D (insigne, crochet, porte-foulard) | SolidCraft (export STL/3MF) |

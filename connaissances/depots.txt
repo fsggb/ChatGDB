@@ -5,3 +5,4 @@ ScoutMap
 CathIA
 ChatGDB
 ScoutBibliotheque
+DivinumOfficium
