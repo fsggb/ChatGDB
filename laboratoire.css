@@ -72,3 +72,6 @@ tr:last-child td{border-bottom:0}
 .resultats.images .carte{display:grid;gap:8px;min-width:0}.resultats.images img{display:block;width:100%;height:auto;border-radius:10px;background:#eceef7}
 .resultats.images .btn{justify-self:start;text-decoration:none}.liste-modeles{display:grid;gap:6px}.liste-modeles label{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
 .champ{display:grid;gap:4px;margin:8px 0;font-weight:600}.champ textarea,.champ input{font:inherit;font-weight:400;padding:8px 10px;border:1px solid #c9cde0;border-radius:10px;width:100%;box-sizing:border-box}
+
+.modes{display:grid;gap:4px;border:1px solid #c9cde0;border-radius:10px;padding:6px 10px;margin:0 0 8px}.modes label{display:flex;gap:6px;align-items:flex-start}.modes legend{font-weight:600;padding:0 4px}
+#d-n-texte{white-space:pre-line;font-variant-numeric:tabular-nums}

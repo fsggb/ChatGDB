@@ -177,41 +177,37 @@
   // Dictée en direct : moteur partagé avec ChatGDB (dictee.js). Le micro est écouté en continu ; à chaque pause de parole (0,8 s) ou après 24 s, la phrase est
   // envoyée à Whisper et son texte s'ajoute aussitôt à la suite. Rien à valider. Le bruit de fond est mesuré en continu ; sans parole, rien n'est envoyé.
   const base64 = blob => new Promise((ok, ko) => { const f = new FileReader(); f.onload = () => ok(String(f.result).split(",")[1]); f.onerror = () => ko(new Error("Lecture de l’audio impossible.")); f.readAsDataURL(blob); });
-  const D = { E: null, texte: "", neurons: 0, nb: 0, reco: null, texteNav: "", chrono: 0, debut: 0, fin: 0 };
+  const D = { E: null, texte: "", neurons: 0, nb: 0, mesures: [], chrono: 0, debut: 0 };
   const afficherDictee = () => { $("d-w-texte").textContent = D.texte; };
+  // Même route que ChatGDB (/dictee) : vérifications et transcription en parallèle côté serveur, donc plus rapide que /ia/dictee
+  async function dicteeRapide(corps) {
+    const res = await appel("/dictee", corps); let o; try { o = await res.json(); } catch { throw new Error("Réponse invalide (" + res.status + ")."); }
+    if (!res.ok || o.ok === false) throw new Error(o.error && o.error.message || o.error || "Erreur " + res.status); return o;
+  }
+  const modeDictee = () => (document.querySelector("input[name=d-mode]:checked") || {}).value || "hybride";
   async function demarrerDictee() {
-    D.texte = ""; D.neurons = 0; D.nb = 0; D.texteNav = ""; afficherDictee(); $("d-n-texte").textContent = ""; $("d-w-meta").textContent = "Ouverture du micro…"; $("d-n-meta").textContent = "—";
+    D.texte = ""; D.neurons = 0; D.nb = 0; D.mesures = []; afficherDictee(); $("d-n-texte").textContent = ""; $("d-w-meta").textContent = "Ouverture du micro…"; $("d-n-meta").textContent = "Mesures de rapidité (par phrase)";
+    const mesure = l => { D.mesures.push(l); $("d-n-texte").textContent = D.mesures.slice(-8).join("\n"); };
     D.E = await GDBDictee.demarrer({
-      transcrire: async (wav, duree) => {
-        $("d-w-meta").textContent = "Transcription…"; const t0 = performance.now();
-        const o = await ia("/dictee", { audio: wav, duree, langue: "fr", force: $("c-force").checked }); D.neurons += o.neurons || 0; D.nb++;
-        noter("dictée", "Whisper : " + String(o.texte || "").slice(0, 80), { whisper: o.texte, delai_s: (performance.now() - t0) / 1000, duree, navigateur: D.texteNav });
-        $("d-w-meta").textContent = "Dernière phrase : " + ((performance.now() - t0) / 1000).toFixed(1) + " s de traitement pour " + duree.toFixed(1) + " s de voix · " + D.nb + " phrase(s), " + arrondi(D.neurons, 1) + " Neurons";
-        return o;
+      mode: modeDictee(),
+      transcrire: async (wav, duree, o) => {
+        const t0 = performance.now(), r = await dicteeRapide({ audio: wav, duree, langue: "fr", apercu: !!(o && o.apercu) });
+        if (!(o && o.apercu)) { D.neurons += r.neurons || 0; D.nb++; noter("dictée", "Whisper : " + String(r.texte || "").slice(0, 80), { whisper: r.texte, aller_retour_ms: Math.round(performance.now() - t0), duree }); }
+        mesure((o && o.apercu ? "aperçu IA" : "IA") + " : " + Math.round(performance.now() - t0) + " ms pour " + duree.toFixed(1) + " s de voix (serveur " + (r.ms || "?") + " ms)");
+        return r;
       },
-      onTexte: t => { D.texte += (D.texte ? " " : "") + t; afficherDictee(); },
-      onEtat: e => { if (e.phase === "parole") $("d-w-meta").textContent = "Je vous entends…"; else if (e.phase === "ecoute" && !e.enAttente && !D.nb) $("d-w-meta").textContent = "Parlez…"; },
+      onTexte: t => { D.texte = t; afficherDictee(); },
+      onMetrique: m => { if (m.type === "premier-mot") mesure("premier mot affiché " + m.ms + " ms après le début de la phrase"); else if (m.type === "phrase") mesure("phrase finale (" + (m.source === "ia" ? "IA" : "navigateur") + ") " + m.ms + " ms après la fin de la parole"); },
+      onEtat: e => { if (e.phase === "parole") $("d-w-meta").textContent = "Je vous entends…"; else if (e.phase === "ecoute" && !e.enAttente && !D.nb) $("d-w-meta").textContent = "Parlez… (" + (e.navigateur ? "dictée du navigateur active" : "pas de dictée de navigateur : aperçu par l’IA") + ")"; else if (e.enAttente) $("d-w-meta").textContent = "L’IA corrige la phrase…"; },
       onErreur: m => { $("d-w-meta").textContent = "Erreur : " + m; },
+      onFin: () => { if (D.E) arreterDictee(); },
       maxSecondes: 900
     });
-    // dictée du navigateur en parallèle, pour comparer (résultats provisoires affichés au fil de la parole)
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SR) {
-      let finaux = "";
-      try {
-        const reco = new SR(); reco.lang = "fr-FR"; reco.continuous = true; reco.interimResults = true; D.reco = reco;
-        reco.onresult = ev => { let prov = ""; finaux = ""; for (const r of ev.results) { if (r.isFinal) finaux += r[0].transcript + " "; else prov += r[0].transcript; } D.texteNav = (finaux + prov).trim(); $("d-n-texte").textContent = D.texteNav; $("d-n-meta").textContent = "Navigateur : texte provisoire affiché au fil de la parole"; };
-        reco.onend = () => { if (D.E) { try { reco.start(); } catch { /* arrêtée */ } } };    // le navigateur coupe seul après un silence : on relance
-        reco.onerror = () => { /* Brave, Firefox : pas de dictée navigateur */ };
-        reco.start();
-      } catch { D.reco = null; }
-    } else $("d-n-meta").textContent = "Dictée du navigateur indisponible ici.";
     D.debut = performance.now(); D.chrono = setInterval(() => { $("d-duree").textContent = "En écoute : " + ((performance.now() - D.debut) / 1000).toFixed(0) + " s"; }, 500);
     $("d-enreg").disabled = true; $("d-stop").disabled = false;
   }
   async function arreterDictee() {
     const E = D.E; if (!E) return; D.E = null; clearInterval(D.chrono); $("d-duree").textContent = "";
-    try { D.reco && D.reco.stop(); } catch { /* ignoré */ } D.reco = null;
     await E.arreter();                                   // la dernière phrase est envoyée avant de fermer le micro
     $("d-enreg").disabled = false; $("d-stop").disabled = true;
   }
