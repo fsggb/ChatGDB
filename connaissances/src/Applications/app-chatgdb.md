@@ -105,3 +105,10 @@ L'administrateur peut apprendre des choses à ChatGDB (« retiens que… ») : l
 - Comment ChatGDB peut-il ouvrir une application pour moi ?
 - Comment écrire au service informatique avec ChatGDB ?
 - Qu'est-ce qu'un artefact ?
+
+## Dicter un message (micro)
+Le bouton micro de la zone de saisie écoute en continu : parlez normalement et faites une courte pause à chaque phrase, elle s'écrit aussitôt dans le message (à l'endroit du curseur), sans rien valider. La transcription est faite par Whisper sur le serveur de la fédération (l'API de Claude ne sait pas transcrire la parole) ; rien n'est envoyé tant que personne ne parle. Limite : 20 minutes de dictée par personne et par jour. Un bouton « Terminer » arrête l'écoute. Si le serveur est indisponible, ChatGDB utilise la dictée du navigateur quand il en a une (Chrome, Edge, Safari).
+
+## Documents créés dans une application
+Quand ChatGDB crée ou modifie un document dans Word, Excel, PowerPoint, Acrobat ou CADCraft, le document est enregistré dans la conversation et une carte avec les boutons « Ouvrir » (rouvre l'application avec le document) et « Télécharger » apparaît sous sa réponse, même si le volet a été fermé. Les exports (PDF) ajoutent une carte « Télécharger ».
+

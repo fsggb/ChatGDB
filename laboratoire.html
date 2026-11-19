@@ -24,6 +24,7 @@
 <nav class="onglets" id="onglets" role="tablist" aria-label="Sections du laboratoire">
   <button role="tab" data-onglet="comparer" aria-selected="true">Comparer</button>
   <button role="tab" data-onglet="dictee" aria-selected="false">Dictée</button>
+  <button role="tab" data-onglet="images" aria-selected="false">Images</button>
   <button role="tab" data-onglet="voix" aria-selected="false">Voix</button>
   <button role="tab" data-onglet="recherche" aria-selected="false">Recherche</button>
   <button role="tab" data-onglet="fiches" aria-selected="false">Fiches</button>
@@ -78,6 +79,23 @@
       <div class="carte"><h3>Whisper (Cloudflare)</h3><p id="d-w-meta" class="mu">—</p><p id="d-w-texte" class="texte" aria-live="polite"></p></div>
       <div class="carte"><h3>Navigateur</h3><p id="d-n-meta" class="mu">—</p><p id="d-n-texte" class="texte" aria-live="polite"></p></div>
     </div>
+  </section>
+
+  <!-- IMAGES -->
+  <section id="p-images" class="panneau" hidden>
+    <h2>Génération d’images</h2>
+    <p class="mu">Claude ne génère pas d’images : il les lit et les décrit. Ces modèles de Cloudflare (Workers AI) en créent à partir d’une description. Décrivez la scène (l’anglais donne souvent de meilleurs résultats), cochez un ou plusieurs modèles pour les comparer côte à côte. Le coût en Neurons est une estimation d’après les tarifs publics.</p>
+    <label class="champ">Description<textarea id="i-prompt" rows="3" maxlength="2000" placeholder="Ex. : a scout camp at dusk, wooden tripod gateway, warm campfire, deep navy sky, elegant flat illustration"></textarea></label>
+    <label class="champ">À éviter (certains modèles)<input id="i-neg" type="text" maxlength="500" placeholder="Ex. : texte, déformé, flou"></label>
+    <div class="ligne">
+      <label>Format <select id="i-format"><option value="1024x1024">Carré 1024 × 1024</option><option value="1024x768" selected>Paysage 4:3 1024 × 768</option><option value="1280x720">Paysage 16:9 1280 × 720</option><option value="768x1024">Portrait 3:4 768 × 1024</option><option value="720x1280">Portrait 9:16 720 × 1280</option><option value="512x512">Petit 512 × 512 (économique)</option></select></label>
+      <label>Pas <input id="i-pas" type="number" min="1" max="50" placeholder="auto" style="width:5em"></label>
+      <label>Graine <input id="i-seed" type="number" min="0" placeholder="aléatoire" style="width:8em"></label>
+      <label class="coche"><input id="i-confirmer" type="checkbox"> Confirmer le coût (images chères)</label>
+    </div>
+    <fieldset><legend>Modèles à essayer</legend><div id="i-modeles" class="liste-modeles"></div></fieldset>
+    <div class="ligne"><button type="button" id="i-lancer" class="primaire">Générer</button><span id="i-estim" class="mu"></span></div>
+    <div id="i-resultats" class="resultats images"></div>
   </section>
 
   <!-- VOIX -->
@@ -141,7 +159,8 @@
 
 <script src="/ScoutHub/config.js"></script>
 <script src="/ScoutHub/common.js"></script>
-<script src="laboratoire.js?v=4"></script>
+<script src="dictee.js?v=202611191800"></script>
+<script src="laboratoire.js?v=5"></script>
 <script src="panneau.js" data-contexte="laboratoire"></script>
 </body>
 </html>
