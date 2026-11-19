@@ -13,7 +13,7 @@ sources:
   - titre: ChatGDB - chatgdb.js (paramètres d'adresse)
     url: https://github.com/fsggb/ChatGDB/blob/main/chatgdb.js
 mots_cles: ChatGDB, assistant, IA, intelligence artificielle, Claude, conversation, crédits, recherche web, artefact, pièce jointe, dictée, bibliothèque, mémoire, Haiku, Sonnet, aide
-liens: app-scouthub, app-scoutbibliotheque, applications-panorama, app-scoutmap, app-laboratoire
+liens: app-scouthub, app-scoutbibliotheque, applications-panorama, app-scoutmap, app-laboratoire, suite-craft-mcp
 resume: ChatGDB est l'assistant conversationnel de la FSGGB, réservé aux comptes connectés de ScoutHub. La fiche explique comment poser une question, joindre des fichiers, utiliser la recherche web, les artefacts, la dictée et les préférences, comment fonctionnent les crédits, et comment ChatGDB peut ouvrir et piloter une application de ScoutHub.
 ---
 

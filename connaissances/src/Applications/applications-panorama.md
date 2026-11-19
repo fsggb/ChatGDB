@@ -9,7 +9,7 @@ sources:
   - titre: ScoutHub - fiche CHATGDB.md
     url: https://github.com/fsggb/ScoutHub/blob/main/CHATGDB.md
 mots_cles: applications, ScoutHub, quelle application, outil, bureautique, création, CAO, cartographie, panorama, liste, choisir
-liens: app-divinumofficium, app-scouthub, app-chatgdb, app-scoutbibliotheque, app-scoutmap, app-cathia, app-soleadworks, app-solidcraft, app-cadcraft, app-word, app-excel, app-powerpoint, app-pdf, app-photoshop, app-illustrator, app-indesign, app-lightroom, app-figma, app-draw, app-premiere, app-aftereffects, app-protools, app-substancepainter
+liens: app-divinumofficium, app-scouthub, app-chatgdb, app-scoutbibliotheque, app-scoutmap, app-cathia, app-soleadworks, app-solidcraft, app-cadcraft, app-word, app-excel, app-powerpoint, app-pdf, app-photoshop, app-illustrator, app-indesign, app-lightroom, app-figma, app-draw, app-premiere, app-aftereffects, app-protools, app-substancepainter, suite-craft-mcp
 resume: Liste de toutes les applications de ScoutHub avec une ligne par application, leur adresse et le tableau des tâches scoutes courantes indiquant quelle application utiliser. Point d'entrée pour choisir le bon outil avant de lire la fiche détaillée.
 ---
 
