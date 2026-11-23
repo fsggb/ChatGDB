@@ -104,3 +104,6 @@ Exemple : `https://fsggb.github.io/ScoutMap/?itineraire=Annecy|Talloires|Menthon
 Dans le panneau Partage, « Lancer un appel vocal » appelle les autres personnes connectées, comme une conférence téléphonique : elles voient une bannière « Rejoindre / Plus tard » (avec sonnerie et vibration si le navigateur le permet) et seules celles qui veulent répondent. Les personnes dans l'appel s'entendent toutes en même temps ; chacune peut couper son micro ; l'appel s'arrête quand la dernière raccroche. Audio seul, 8 personnes au plus.
 - Limites : sur téléphone, l'appel est prévu écran allumé (le navigateur coupe souvent le micro quand l'écran se verrouille, surtout sur iPhone) ; la sonnerie ne marche que si ScoutMap est ouvert ; certains réseaux filtrés bloquent les appels.
 - On peut lancer un partage même si la carte est vide (simple avertissement) : ce qui sera posé ensuite apparaîtra chez les autres.
+
+## Préparer un jeu avec ChatGDB (distance, relief, soleil)
+Deux commandes aident à dimensionner un parcours : `route.analyse` (distance, dénivelé, durée de marche, heure d'arrivée, marge avant le coucher du soleil, alertes) et `info.sun` (lever et coucher du soleil d'un lieu et d'une date). Voir la fiche comp-grand-jeu-preparation. L'épreuve « sans carte » masque la carte sous la zone des azimuts (menu de l'outil Azimuts) ; le masque s'imprime aussi.
