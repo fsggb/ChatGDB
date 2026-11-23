@@ -14,8 +14,11 @@
   const norm = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "");
   const registry = () => (window.SCOUTHUB_APPS || []).map(a => {
     let u; try { u = new URL(a.url, BASE); } catch { return null; }
-    return u.origin === location.origin && !BLOCK.test(a.name) && u.pathname.indexOf("/ChatGDB/") < 0 ? { name: a.name, url: u } : null;
+    const dossier = (/\/ScoutHub\/([^/]+)\//.exec(u.pathname) || [])[1] || "";
+    return u.origin === location.origin && !BLOCK.test(a.name) && u.pathname.indexOf("/ChatGDB/") < 0 ? { name: a.name, dossier, url: u } : null;
   }).filter(Boolean);
+  // Autres noms que l'IA peut employer pour une application (le portail les affiche sous un nom, le dossier porte l'autre)
+  const ALIAS_APP = { scoutmap: "scoutmap", cartesign: "scoutmap", ign: "scoutmap", carte: "scoutmap", cartes: "scoutmap", acrobat: "pdf", autocad: "cadcraft", solidworks: "solidcraft", premierepro: "premiere", aftereffects: "aftereffects", protools: "protools", excalidraw: "draw", substancepainter: "substancepainter" };
   const names = () => registry().map(a => a.name);
   // Applications de la suite « Craft » (tableur, traitement de texte…) : ouvertes en « mode hôte » (?host=parent), elles reçoivent
   // de ChatGDB des fichiers à ouvrir et lui remettent ce qu'elles enregistrent (pont postMessage prévu par la suite pour les agents).
@@ -24,7 +27,7 @@
   // spec = { app, params, chemin } → adresse sûre, ou null
   function urlOf(spec) {
     if (!spec) return null;
-    const a = registry().find(x => norm(x.name) === norm(spec.app)); if (!a) return null;
+    const q = norm(spec.app), a = registry().find(x => norm(x.name) === q) || registry().find(x => x.dossier && norm(x.dossier) === q) || registry().find(x => ALIAS_APP[q] && norm(x.dossier) === ALIAS_APP[q]); if (!a) return null;
     const u = new URL(a.url.href);
     const base = a.url.pathname.replace(/[^/]*$/, ""), chemin = String(spec.chemin || "").replace(/^\/+/, "");
     // pas de « % » (« %2e%2e » serait normalisé en « .. » après le filtre), pas de « .. », de « ? », de « # », de « : », de « \\ »
@@ -493,7 +496,7 @@
       if (a === "ouvrir" && PANNEAU && /^(page|h[oô]te|cette page|ici)$/i.test(String(input.app || "").trim())) { frame = hoteFrame(); return { texte: "Page à côté du panneau (déjà ouverte) : tu agis directement dessus.\n\n" + snapshot() }; }
       if (a === "ouvrir") {
         const u = urlOf({ app: input.app, params: input.params, chemin: input.chemin });
-        if (!u) return { texte: "Refusé : application inconnue ou non autorisée « " + String(input.app || "") + " ». Applications disponibles : " + names().join(", ") + "." };
+        if (!u) return { texte: "Refusé : application inconnue ou non autorisée « " + String(input.app || "") + " ». Applications disponibles (nom affiché, ou nom du dossier entre parenthèses) : " + registry().map(a => a.name + (a.dossier && norm(a.dossier) !== norm(a.name) ? " (" + a.dossier + ")" : "")).join(", ") + "." };
         // Déjà ouverte (même application) : on garde son contenu, rien n'est rechargé ni perdu
         const base = x => x.pathname.replace(/[^/]*$/, "");
         if (!input.nouveau && frame && frame.isConnected && docOf()) { try { if (base(new URL(frame.contentWindow.location.href)) === base(u)) { pont.touche = true; return { texte: "Application déjà ouverte : son contenu actuel est conservé (le fichier de la conversation reste enregistré). Utilise-la directement ; pour repartir d'un document vide, rouvre avec nouveau=true.\n\n" + snapshot() }; } } catch { /* autre page : on rouvre */ } }

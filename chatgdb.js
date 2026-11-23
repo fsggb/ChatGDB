@@ -907,6 +907,7 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
     resume: { type: "string", description: "Une phrase qui dit de quoi parle la fiche." }, mots_cles: { type: "array", items: { type: "string" }, description: "5 à 10 mots que les gens utiliseraient pour la chercher." },
     contenu: { type: "string", description: "Markdown court : sections « ## », listes courtes, 40 lignes au plus ; sans ligne « --- »." } }, required: ["id", "titre", "theme", "resume", "mots_cles", "contenu"] } };
   const CONSIGNE_ARTEFACTS = "ARTEFACTS (pages HTML, animations, mises en page) : avant d'en créer un, lis avec lire_fiche les fiches « artefacts-design-web », « artefacts-animation-web » et « artefacts-checklist » de la base de connaissances et applique-les (règles définies, pas inventées) ; avant de livrer, passe la liste de contrôle.";
+  const CONSIGNE_CALCUL = "CALCUL EXACT : pour tout ce qui demande de la rigueur (chiffrer ou déchiffrer un message, compter, convertir, calculer une distance, une pente, une durée, une heure), n'écris JAMAIS le résultat de tête : écris un petit programme et exécute-le avec l'outil executer_code, puis vérifie (déchiffre ce que tu viens de chiffrer). Donne ensuite le résultat et la méthode.";
   const CONSIGNE_FICHES = "FICHES DE CONNAISSANCES (administrateur) : tu peux proposer une fiche avec l'outil proposer_fiche, mais seulement si TOUTES ces conditions sont réunies : le savoir est utile à d'autres chefs, durable, général et fiable (vérifié, pas une supposition) ; il n'est pas déjà dans la base (cherche d'abord avec chercher_connaissances) ; il ne contient AUCUNE donnée personnelle ou confidentielle (noms, adresses, contacts, jeunes, santé, mots de passe, détails d'une unité précise). Une fiche = un sujet, courte, listes sèches, titre précis. Au plus 2 propositions par conversation, jamais pour une simple réponse ; dis à l'administrateur en une phrase ce que tu as proposé. Ce n'est qu'un brouillon : rien n'est publié sans sa validation. Ne propose jamais de modifier ou supprimer une fiche existante.";
   const BASE_C = new URL("connaissances/", location.href);
   let baseIdx = null;
@@ -998,12 +999,13 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
     busy = true; abort = new AbortController(); liveText = ""; liveSteps = baseSteps = []; updateSend(); drawThread(); notice();
     const journal = [], steps = [], sources = [], vus = {}, props = [], aides = [], depots = [], urlsVues = {}, pas = t => { steps.push(t); liveSteps = steps.slice(); updateLive(); };
     try {
-      const apps = GA.names(), conf = await Hub.call("rapide", { modele: prefs.modele, profondeur: prefs.profondeur, style: prefs.style, custom: [prefs.custom, CONTEXTE_PANNEAU, CONSIGNE_ARTEFACTS, estAdmin() ? CONSIGNE_FICHES : ""].filter(Boolean).join("\n"), effort: prefs.effort, web: webOn, ...(apps.length ? { apps } : {}) });
+      const apps = GA.names(), conf = await Hub.call("rapide", { modele: prefs.modele, profondeur: prefs.profondeur, style: prefs.style, custom: [prefs.custom, CONTEXTE_PANNEAU, CONSIGNE_ARTEFACTS, CONSIGNE_CALCUL, estAdmin() ? CONSIGNE_FICHES : ""].filter(Boolean).join("\n"), effort: prefs.effort, web: webOn, ...(apps.length ? { apps } : {}) });
       // l'outil « application » est décrit par la page elle-même (actions réellement disponibles dans ce navigateur)
       // Aucun plafond d'étapes : l'outil « application » est décrit par la page, et les outils web (recherche, lecture de pages) n'ont plus de nombre maximal d'utilisations
       const outils = conf.outils.map(o => o.name === "application" && GA.schema ? GA.schema(apps) : /^web_(search|fetch)_/.test(o.type || "") ? (({ max_uses, ...reste }) => reste)(o) : o);
       if (estAdmin() && conf.relais && conf.jeton) outils.push(OUTIL_FICHE);
       if (labo()) outils.push(OUTIL_LABO);
+      if (window.GDBCalcul) outils.push(window.GDBCalcul.OUTIL);
       const hist = await history(), messages = hist.map(m => ({ role: m.role, content: contenuAnthropic(m) }));
       hist.forEach(m => { if (m.role === "user") (String(m.text || "").match(/https:\/\/[^\s)>"']+/g) || []).forEach(u => { urlsVues[u] = 1; }); });
       let texte = "", sansProgres = 0, memeAction = { sig: "", n: 0 }, relance = { enCours: false, vaines: 0 };
@@ -1081,6 +1083,10 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
             const r = await GA.exec(e, { mount: mountLive, unmount: closeArt });
             journal.push("Application" + (e.app ? " " + e.app : "") + " · " + (e.action || "") + " " + JSON.stringify(Object.fromEntries(Object.entries(e).filter(([k]) => k !== "action" && k !== "app" && k !== "feuilles"))).slice(0, 110) + " → " + String(r.texte || "").split("\n").filter(Boolean)[0].slice(0, 90));
             resultats.push({ type: "tool_result", tool_use_id: b.id, content: r.image ? [{ type: "text", text: r.texte }, { type: "image", source: { type: "base64", media_type: r.image.m, data: r.image.d } }] : r.texte });
+          } else if (b.name === "executer_code") {
+            pas({ k: "outil", t: "Calcul exact (" + (e.langage || "javascript") + ")" });
+            journal.push("executer_code " + String(e.code || "").slice(0, 60).replace(/\s+/g, " "));
+            resultats.push({ type: "tool_result", tool_use_id: b.id, content: await window.GDBCalcul.executer(e) });
           } else if (b.name === "laboratoire") {
             pas({ k: "outil", t: "Laboratoire : " + (e.action || "") + (e.q ? " « " + String(e.q).slice(0, 60) + " »" : "") });
             journal.push("laboratoire " + JSON.stringify(e).slice(0, 100));
