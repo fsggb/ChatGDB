@@ -634,14 +634,9 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
     openArtId = null; app.dataset.art = "open"; $("art").hidden = false;
     $("art-ico").innerHTML = '<use href="#i-layers"/>'; $("art-name").textContent = title || "Application"; $("art-kind").textContent = "Application ScoutHub · pilotée par ChatGDB";
     $("art-ver").hidden = true; $("art-lib").hidden = true; $("tab-prev").parentElement.hidden = true;
+    $("art").classList.add("full");   // une application s'ouvre en pleine page (le bouton plein écran du volet la remet à côté de la conversation)
     const body = $("art-body"); body.textContent = ""; const f = GA.makeFrame(url, title);
-    // Bandeau : permettre à ChatGDB de voir la vraie image de l'application (indispensable pour celles dessinées en WebGL)
-    const bVoir = el("button", { className: "btn", type: "button", textContent: GA.voitEcran() ? "ChatGDB voit l’application" : "👁 Laisser ChatGDB voir l’application", disabled: GA.voitEcran() });
-    const info = el("span", { textContent: "ChatGDB utilise l’application : vous pouvez la regarder ou reprendre la main." });
-    bVoir.onclick = async () => { try { await GA.voir(); } catch (e) { toast("Partage refusé ou impossible : " + (e.message || e)); } };
-    const maj = e => { const ok = GA.voitEcran(); bVoir.disabled = ok; bVoir.textContent = ok ? "ChatGDB voit l’application" : "👁 Laisser ChatGDB voir l’application"; if (!ok && e && e.detail && e.detail.besoin) { info.textContent = "Cette application est dessinée en 3D/WebGL : ChatGDB a besoin de voir l’écran pour l’utiliser."; bVoir.classList.add("primary"); } };
-    window.addEventListener("gdb-vue", maj);
-    body.append(el("div", { className: "appbar" }, info, bVoir), f); GA.setFrame(f); return f;
+    body.append(f); GA.setFrame(f); return f;
   }
   function closeArt() { openArtId = null; app.dataset.art = "closed"; $("art").hidden = true; $("art").classList.remove("full"); }
   function renderArt(conv = current) {
@@ -651,11 +646,11 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
     $("art-lib").hidden = !(isAdmin && biblioApi && !conv.example);
     const sel = $("art-ver"); sel.hidden = vers.length < 2; sel.textContent = "";
     vers.forEach((v, i) => sel.append(el("option", { value: i, textContent: "Version " + (i + 1) + (v.edited ? " (modifiée)" : ""), selected: i === openArtVer })));
-    $("tab-prev").setAttribute("aria-selected", String(tab === "prev")); $("tab-code").setAttribute("aria-selected", String(tab === "code")); $("tab-edit").setAttribute("aria-selected", String(tab === "edit"));
-    $("tab-edit").hidden = a.type === "app" || !!conv.example;
+    $("tab-prev").setAttribute("aria-selected", String(tab === "prev")); $("tab-code").setAttribute("aria-selected", String(tab === "code")); $("art-edit").setAttribute("aria-pressed", String(tab === "edit"));
+    $("art-edit").hidden = a.type === "app" || !!conv.example;
     $("tab-prev").parentElement.hidden = false;
     const body = $("art-body"); body.textContent = "";
-    if (tab === "code") { body.append(el("pre", { className: "raw", textContent: a.content })); return; }
+    if (tab === "code") { const pre = el("pre", { className: "raw" }); if (window.GDBColor) pre.innerHTML = window.GDBColor.coloriser(a.content, a.type, a.lang); else pre.textContent = a.content; body.append(pre); return; }
     if (tab === "edit" && a.type !== "app" && !conv.example) { body.append(editeurArt(conv, a)); return; }
     if (a.type === "markdown") { curSources = []; body.append(el("div", { className: "md", innerHTML: md(a.content) })); }
     else if (a.type === "app") {
@@ -670,7 +665,7 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
     else if (a.type === "csv") {
       const rows = a.content.split(/\r?\n/).filter(Boolean).map(line => { const out = []; let cur = "", q = false; for (let i = 0; i < line.length; i++) { const ch = line[i]; if (q) { if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; } else if (ch === '"') q = false; else cur += ch; } else if (ch === '"') q = true; else if (ch === "," || ch === ";") { out.push(cur); cur = ""; } else cur += ch; } out.push(cur); return out; });
       body.append(el("div", { className: "md", innerHTML: "<table><thead><tr>" + (rows[0] || []).map(c => `<th>${esc(c)}</th>`).join("") + "</tr></thead><tbody>" + rows.slice(1).map(r => "<tr>" + r.map(c => `<td>${esc(c)}</td>`).join("") + "</tr>").join("") + "</tbody></table>" }));
-    } else body.append(el("pre", { className: "raw", textContent: a.content }));
+    } else { const pre = el("pre", { className: "raw" }); if (window.GDBColor) pre.innerHTML = window.GDBColor.coloriser(a.content, a.type, a.lang); else pre.textContent = a.content; body.append(pre); }
   }
   // ---------- édition d'un artefact : source à gauche (ou en haut), aperçu mis à jour en direct ----------
   const CSP_ART = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data: blob: https:; style-src \'unsafe-inline\'; font-src data:; form-action \'none\'; base-uri \'none\'">';
@@ -717,7 +712,7 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
     majApercu(); setTimeout(() => ta.focus(), 0);
     return box;
   }
-  $("tab-prev").onclick = () => { tab = "prev"; renderArt(); }; $("tab-code").onclick = () => { tab = "code"; renderArt(); }; $("tab-edit").onclick = () => { tab = "edit"; renderArt(); };
+  $("tab-prev").onclick = () => { tab = "prev"; renderArt(); }; $("tab-code").onclick = () => { tab = "code"; renderArt(); }; $("art-edit").onclick = () => { tab = tab === "edit" ? "code" : "edit"; renderArt(); };
   $("art-ver").onchange = e => { openArtVer = +e.target.value; renderArt(); };
   $("art-close").onclick = () => { closeArt(); drawThread(false); };
   $("art-full").onclick = () => $("art").classList.toggle("full");
