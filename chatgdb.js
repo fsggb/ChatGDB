@@ -661,7 +661,7 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
     else if (a.type === "app") {
       const u = GA.urlOf && GA.urlOf(GA.parseSpec(a.content));
       if (!u) body.append(el("p", { className: "muted", style: "padding:18px", textContent: "Application inconnue ou non autorisée." }));
-      else { const f = GA.makeFrame(u.href, a.title); body.append(el("div", { className: "appbar" }, el("span", { textContent: "L’application est utilisable ici." }), el("a", { className: "btn", href: u.href, target: "_blank", rel: "noopener", textContent: "Ouvrir en pleine page" })), f); GA.setFrame(f); }
+      else { const sp = GA.parseSpec(a.content), f = GA.makeFrame(u.href, a.title, sp && sp.commandes); body.append(el("div", { className: "appbar" }, el("span", { textContent: "L’application est utilisable ici." }), el("a", { className: "btn", href: u.href, target: "_blank", rel: "noopener", textContent: "Ouvrir en pleine page" })), f); GA.setFrame(f); }
     }
     else if (a.type === "html") {
       const csp = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data: blob:; style-src \'unsafe-inline\'; script-src \'unsafe-inline\'; font-src data:; form-action \'none\'; base-uri \'none\'; frame-src \'none\'; connect-src \'none\'">';
