@@ -14,8 +14,11 @@
   const norm = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "");
   const registry = () => (window.SCOUTHUB_APPS || []).map(a => {
     let u; try { u = new URL(a.url, BASE); } catch { return null; }
-    return u.origin === location.origin && !BLOCK.test(a.name) && u.pathname.indexOf("/ChatGDB/") < 0 ? { name: a.name, url: u } : null;
+    const dossier = (/\/ScoutHub\/([^/]+)\//.exec(u.pathname) || [])[1] || "";
+    return u.origin === location.origin && !BLOCK.test(a.name) && u.pathname.indexOf("/ChatGDB/") < 0 ? { name: a.name, dossier, url: u } : null;
   }).filter(Boolean);
+  // Autres noms que l'IA peut employer pour une application (le portail les affiche sous un nom, le dossier porte l'autre)
+  const ALIAS_APP = { scoutmap: "scoutmap", cartesign: "scoutmap", ign: "scoutmap", carte: "scoutmap", cartes: "scoutmap", acrobat: "pdf", autocad: "cadcraft", solidworks: "solidcraft", premierepro: "premiere", aftereffects: "aftereffects", protools: "protools", excalidraw: "draw", substancepainter: "substancepainter" };
   const names = () => registry().map(a => a.name);
   // Applications de la suite « Craft » (tableur, traitement de texte…) : ouvertes en « mode hôte » (?host=parent), elles reçoivent
   // de ChatGDB des fichiers à ouvrir et lui remettent ce qu'elles enregistrent (pont postMessage prévu par la suite pour les agents).
@@ -24,7 +27,7 @@
   // spec = { app, params, chemin } → adresse sûre, ou null
   function urlOf(spec) {
     if (!spec) return null;
-    const a = registry().find(x => norm(x.name) === norm(spec.app)); if (!a) return null;
+    const q = norm(spec.app), a = registry().find(x => norm(x.name) === q) || registry().find(x => x.dossier && norm(x.dossier) === q) || registry().find(x => ALIAS_APP[q] && norm(x.dossier) === ALIAS_APP[q]); if (!a) return null;
     const u = new URL(a.url.href);
     const base = a.url.pathname.replace(/[^/]*$/, ""), chemin = String(spec.chemin || "").replace(/^\/+/, "");
     // pas de « % » (« %2e%2e » serait normalisé en « .. » après le filtre), pas de « .. », de « ? », de « # », de « : », de « \\ »
@@ -222,35 +225,9 @@
       const s = document.createElement("script"); s.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"; s.integrity = "sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H"; s.crossOrigin = "anonymous"; s.onload = () => res(window.html2canvas); s.onerror = () => { h2cPromise = null; rej(new Error("bibliothèque de capture indisponible")); }; document.head.append(s);
     }));
   }
-  // ---------- Vue réelle de l'écran (applications dessinées en WebGL : une capture logicielle les voit blanches) ----------
-  // La personne autorise une fois le partage de cet onglet ; les captures suivantes viennent de la vraie image, recadrée sur l'application.
-  let ecran = null, video = null;
-  async function voir() {
-    if (ecran && ecran.active) return true;
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) throw new Error("ce navigateur ne permet pas le partage d’écran");
-    ecran = await navigator.mediaDevices.getDisplayMedia({ video: { displaySurface: "browser", frameRate: 5 }, audio: false, preferCurrentTab: true, selfBrowserSurface: "include", surfaceSwitching: "exclude" });
-    const piste = ecran.getVideoTracks()[0];
-    try { if (window.CropTarget && frame && piste.cropTo) await piste.cropTo(await CropTarget.fromElement(frame)); piste.recadre = !!window.CropTarget; } catch { piste.recadre = false; }
-    piste.addEventListener("ended", () => { ecran = null; video = null; window.dispatchEvent(new Event("gdb-vue")); });
-    video = document.createElement("video"); video.muted = true; video.playsInline = true; video.srcObject = ecran; await video.play();
-    window.dispatchEvent(new Event("gdb-vue"));
-    return true;
-  }
-  const voitEcran = () => !!(ecran && ecran.active && video);
-  async function captureEcran() {
-    await wait(250);
-    const piste = ecran.getVideoTracks()[0], vw = video.videoWidth, vh = video.videoHeight; if (!vw || !vh) throw new Error("image d’écran indisponible");
-    let sx = 0, sy = 0, sw = vw, sh = vh;
-    if (!piste.recadre && frame) {   // onglet entier : on garde la zone de l'application
-      const r = frame.getBoundingClientRect(), k = vw / window.innerWidth;
-      sx = Math.max(0, r.left * k); sy = Math.max(0, r.top * k); sw = Math.min(vw - sx, r.width * k); sh = Math.min(vh - sy, r.height * k);
-    }
-    const w = frame ? frame.clientWidth : sw, h = frame ? frame.clientHeight : sh, scale = Math.min(1, 1000 / Math.max(1, w));
-    const cv = document.createElement("canvas"); cv.width = Math.round(w * scale); cv.height = Math.round(h * scale);
-    const g = cv.getContext("2d"); g.drawImage(video, sx, sy, sw, sh, 0, 0, cv.width, cv.height);
-    reperes(g, cv, w, h, scale);
-    return { m: "image/jpeg", d: cv.toDataURL("image/jpeg", 0.62).split(",")[1] };
-  }
+  // Plus de partage d'écran du navigateur (ni bandeau, ni flux vidéo) : ChatGDB voit l'application par sa propre capture
+  // (celle de l'application quand elle en offre une, sinon une capture logicielle de la page) et la lit par ses commandes.
+  const voir = async () => false, voitEcran = () => false;
   function reperes(g, cv, w, h, scale) {
     g.save(); g.strokeStyle = "rgba(232,89,12,.35)"; g.fillStyle = "rgba(232,89,12,.9)"; g.font = "bold " + Math.max(9, 11 * scale) + "px sans-serif"; g.lineWidth = 1;
     for (let x = 100; x < w; x += 100) { g.beginPath(); g.moveTo(x * scale, 0); g.lineTo(x * scale, cv.height); g.stroke(); g.fillText(String(x), x * scale + 2, 11); }
@@ -266,7 +243,6 @@
     g.restore();
   }
   async function capture(zone) {
-    if (!zone && voitEcran()) { try { return await captureEcran(); } catch { /* on se rabat sur la capture logicielle */ } }
     const d = docOf(), w = d && d.defaultView; if (!d) throw new Error("aucune application ouverte");
     const h2c = await loadH2c();
     const zx = zone ? zone.x : 0, zy = zone ? zone.y : 0, cw = zone ? zone.w : w.innerWidth, ch = zone ? zone.h : w.innerHeight;
@@ -493,7 +469,7 @@
       if (a === "ouvrir" && PANNEAU && /^(page|h[oô]te|cette page|ici)$/i.test(String(input.app || "").trim())) { frame = hoteFrame(); return { texte: "Page à côté du panneau (déjà ouverte) : tu agis directement dessus.\n\n" + snapshot() }; }
       if (a === "ouvrir") {
         const u = urlOf({ app: input.app, params: input.params, chemin: input.chemin });
-        if (!u) return { texte: "Refusé : application inconnue ou non autorisée « " + String(input.app || "") + " ». Applications disponibles : " + names().join(", ") + "." };
+        if (!u) return { texte: "Refusé : application inconnue ou non autorisée « " + String(input.app || "") + " ». Applications disponibles (nom affiché, ou nom du dossier entre parenthèses) : " + registry().map(a => a.name + (a.dossier && norm(a.dossier) !== norm(a.name) ? " (" + a.dossier + ")" : "")).join(", ") + "." };
         // Déjà ouverte (même application) : on garde son contenu, rien n'est rechargé ni perdu
         const base = x => x.pathname.replace(/[^/]*$/, "");
         if (!input.nouveau && frame && frame.isConnected && docOf()) { try { if (base(new URL(frame.contentWindow.location.href)) === base(u)) { pont.touche = true; return { texte: "Application déjà ouverte : son contenu actuel est conservé (le fichier de la conversation reste enregistré). Utilise-la directement ; pour repartir d'un document vide, rouvre avec nouveau=true.\n\n" + snapshot() }; } } catch { /* autre page : on rouvre */ } }
@@ -561,7 +537,7 @@
           // capture agrandie : x, y (coin haut-gauche) et x2, y2 (coin bas-droit) d'une zone à voir en détail, avec des repères tous les 10 à 50 px
           const zone = [input.x, input.y, input.x2, input.y2].every(v => isFinite(+v) && v !== undefined && v !== null && v !== "") ? (() => { const vw = d.defaultView.innerWidth, vh = d.defaultView.innerHeight, x1 = Math.max(0, Math.min(+input.x, +input.x2)), y1 = Math.max(0, Math.min(+input.y, +input.y2)), x2 = Math.min(vw, Math.max(+input.x, +input.x2)), y2 = Math.min(vh, Math.max(+input.y, +input.y2)); return x2 - x1 >= 10 && y2 - y1 >= 10 ? { x: x1, y: y1, w: x2 - x1, h: y2 - y1 } : null; })() : null;
           const im = await capture(zone);
-          const note = im.vide ? "ATTENTION : cette application est dessinée en WebGL et la capture logicielle la voit vide (ce n'est pas l'application qui est vide). Demande à la personne de cliquer sur « Laisser ChatGDB voir l’application » au-dessus de l'application (partage de l'onglet, une fois) ; en attendant, appuie-toi sur « lire », sur la fiche de l'application et sur des actions par coordonnées.\n\n" : voitEcran() ? "Capture réelle de l'écran (partage autorisé par la personne).\n\n" : "";
+          const note = im.vide ? "ATTENTION : cette application est dessinée en WebGL et la capture logicielle la voit vide (ce n'est pas l'application qui est vide). Ne demande rien à la personne : appuie-toi sur « lire », sur la fiche de l'application et sur des actions par coordonnées.\n\n" : voitEcran() ? "Capture réelle de l'écran (partage autorisé par la personne).\n\n" : "";
           delete im.vide; return { texte: note + "Capture de l'application (zone visible).\n\n" + text, image: im };
         }
         catch (e) { return { texte: "Capture impossible (" + e.message + "). État en texte :\n\n" + text }; }
