@@ -659,6 +659,7 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
     vers.forEach((v, i) => sel.append(el("option", { value: i, textContent: "Version " + (i + 1) + (v.edited ? " (modifiée)" : ""), selected: i === openArtVer })));
     $("tab-prev").setAttribute("aria-selected", String(tab === "prev")); $("tab-code").setAttribute("aria-selected", String(tab === "code")); $("art-edit").setAttribute("aria-pressed", String(tab === "edit"));
     $("art-edit").hidden = a.type === "app" || !!conv.example;
+    $("art-run").hidden = !(isAdmin && a.type === "code" && GA.hasFrame && GA.hasFrame());
     $("tab-prev").parentElement.hidden = false;
     const body = $("art-body"); body.textContent = "";
     if (tab === "code") { const pre = el("pre", { className: "raw" }); if (window.GDBColor) pre.innerHTML = window.GDBColor.coloriser(a.content, a.type, a.lang); else pre.textContent = a.content; body.append(pre); return; }
@@ -724,6 +725,19 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
     return box;
   }
   $("tab-prev").onclick = () => { tab = "prev"; renderArt(); }; $("tab-code").onclick = () => { tab = "code"; renderArt(); }; $("art-edit").onclick = () => { tab = tab === "edit" ? "code" : "edit"; renderArt(); };
+  // Exécution dans l'application ouverte : réservé à l'administrateur, toujours sur un clic humain (jamais déclenché seul par l'IA).
+  // Aperçu uniquement : le résultat (sortie console, valeur renvoyée, ou erreur) s'affiche ici, rien n'est envoyé automatiquement à ChatGDB.
+  $("art-run").onclick = async () => {
+    const vers = versionsOf(current, openArtId), a = vers[openArtVer]; if (!a) return;
+    if (!confirm("Exécuter ce code dans l’application ouverte, avec accès à sa console ? À n’utiliser que sur du code que vous avez relu.")) return;
+    const bt = $("art-run"); bt.disabled = true;
+    try {
+      const r = await GA.injecter(a.content);
+      const t = (r.out ? "Sortie :\n" + r.out : "") + (r.valeur !== undefined ? (r.out ? "\n" : "") + "Valeur renvoyée : " + r.valeur : "") || "(exécuté, aucune sortie console ni valeur renvoyée)";
+      alert(t.slice(0, 4000));
+    } catch (e) { alert("Erreur : " + (e && e.message || e)); }
+    finally { bt.disabled = false; }
+  };
   $("art-ver").onchange = e => { openArtVer = +e.target.value; renderArt(); };
   $("art-close").onclick = () => { closeArt(); drawThread(false); };
   $("art-full").onclick = () => $("art").classList.toggle("full");
@@ -914,6 +928,7 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
     contenu: { type: "string", description: "Markdown court : sections « ## », listes courtes, 40 lignes au plus ; sans ligne « --- »." } }, required: ["id", "titre", "theme", "resume", "mots_cles", "contenu"] } };
   const CONSIGNE_ARTEFACTS = "ARTEFACTS (pages HTML, animations, mises en page) : avant d'en créer un, lis avec lire_fiche les fiches « artefacts-design-web », « artefacts-animation-web » et « artefacts-checklist » de la base de connaissances et applique-les (règles définies, pas inventées) ; avant de livrer, passe la liste de contrôle.";
   const CONSIGNE_CALCUL = "CALCUL EXACT : pour tout ce qui demande de la rigueur (chiffrer ou déchiffrer un message, compter, convertir, calculer une distance, une pente, une durée, une heure), n'écris JAMAIS le résultat de tête : écris un petit programme et exécute-le avec l'outil executer_code, puis vérifie (déchiffre ce que tu viens de chiffrer). Donne ensuite le résultat et la méthode.";
+  const CONSIGNE_INJECTION = "OUTIL SUR MESURE DANS UNE APPLICATION (administrateur, aperçu) : quand l'administrateur veut une sortie que les commandes de l'application ne proposent pas directement (par exemple une carte ScoutMap avec échelle, légende et mise en page précises), tu peux écrire un artefact de code (JavaScript) qui s'appuie sur ce que cette application expose déjà dans sa page (son window.<app>, le DOM, Leaflet pour ScoutMap…) pour composer la sortie voulue. Explique dans ta réponse que ce code s'exécute dans l'application déjà ouverte via le bouton ▶ (lecture) de la vue Code de l'artefact ; TOI tu ne l'exécutes jamais : seul un clic de l'administrateur le lance, après relecture. N'utilise ceci que pour de l'affichage ou de la lecture (jamais pour supprimer, envoyer ou publier quelque chose) et dis clairement à l'administrateur ce que le code va faire avant qu'il clique.";
   const CONSIGNE_FICHES = "FICHES DE CONNAISSANCES (administrateur) : tu peux proposer une fiche avec l'outil proposer_fiche, mais seulement si TOUTES ces conditions sont réunies : le savoir est utile à d'autres chefs, durable, général et fiable (vérifié, pas une supposition) ; il n'est pas déjà dans la base (cherche d'abord avec chercher_connaissances) ; il ne contient AUCUNE donnée personnelle ou confidentielle (noms, adresses, contacts, jeunes, santé, mots de passe, détails d'une unité précise). Une fiche = un sujet, courte, listes sèches, titre précis. Au plus 2 propositions par conversation, jamais pour une simple réponse ; dis à l'administrateur en une phrase ce que tu as proposé. Ce n'est qu'un brouillon : rien n'est publié sans sa validation. Ne propose jamais de modifier ou supprimer une fiche existante.";
   const BASE_C = new URL("connaissances/", location.href);
   let baseIdx = null;
@@ -1005,7 +1020,7 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
     busy = true; abort = new AbortController(); liveText = ""; liveSteps = baseSteps = []; updateSend(); drawThread(); notice();
     const journal = [], steps = [], sources = [], vus = {}, props = [], aides = [], depots = [], urlsVues = {}, pas = t => { steps.push(t); liveSteps = steps.slice(); updateLive(); };
     try {
-      const apps = GA.names(), conf = await Hub.call("rapide", { modele: prefs.modele, profondeur: prefs.profondeur, style: prefs.style, custom: [prefs.custom, CONTEXTE_PANNEAU, CONSIGNE_ARTEFACTS, CONSIGNE_CALCUL, estAdmin() ? CONSIGNE_FICHES : ""].filter(Boolean).join("\n"), effort: prefs.effort, web: webOn, ...(apps.length ? { apps } : {}) });
+      const apps = GA.names(), conf = await Hub.call("rapide", { modele: prefs.modele, profondeur: prefs.profondeur, style: prefs.style, custom: [prefs.custom, CONTEXTE_PANNEAU, CONSIGNE_ARTEFACTS, CONSIGNE_CALCUL, estAdmin() ? CONSIGNE_FICHES : "", estAdmin() ? CONSIGNE_INJECTION : ""].filter(Boolean).join("\n"), effort: prefs.effort, web: webOn, ...(apps.length ? { apps } : {}) });
       // l'outil « application » est décrit par la page elle-même (actions réellement disponibles dans ce navigateur)
       // Aucun plafond d'étapes : l'outil « application » est décrit par la page, et les outils web (recherche, lecture de pages) n'ont plus de nombre maximal d'utilisations
       const outils = conf.outils.map(o => o.name === "application" && GA.schema ? GA.schema(apps) : /^web_(search|fetch)_/.test(o.type || "") ? (({ max_uses, ...reste }) => reste)(o) : o);
@@ -1222,6 +1237,7 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
   }
   $("form").addEventListener("submit", async ev => {
     ev.preventDefault();
+    if (window.GDBCharte && !GDBCharte.accepte()) { GDBCharte.verifier(() => {}); return; }
     if (busy) { if (abort) abort.abort(); return; }
     const text = input.value.trim(); if (!text && !pending.length) return;
     if (!live) return notice((closedMsg || "ChatGDB n’est pas encore activé.") + " Votre message n’a pas été envoyé.");
@@ -1256,5 +1272,7 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
   if (preset) input.value = preset.slice(0, 2000);
   else if (aide) input.value = "J’ai un problème avec une application et j’aimerais écrire au service informatique. Aide-moi à préparer le message.";
   if (preset || aide) { try { history.replaceState(null, "", location.pathname); } catch {} }
-  credits(); refreshModelUi(); show(null); autosize(); input.focus();
+  credits(); refreshModelUi(); show(null); autosize();
+  if (window.GDBCharte) GDBCharte.verifier(() => { try { input.focus(); } catch (e) { /* ignoré */ } });
+  else input.focus();
 })();

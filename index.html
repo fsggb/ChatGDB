@@ -36,6 +36,7 @@
     <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.4 1.4M17.6 17.6L19 19M19 5l-1.4 1.4M6.4 17.6L5 19"/></symbol>
     <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></symbol>
     <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M4 20l1-4L16 5l3 3L8 19zM14 7l3 3"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M6 4l14 8-14 8z"/></symbol>
     <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 15V4M8 8l4-4 4 4M5 13v6h14v-6"/></symbol>
     <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
     <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 16v6M8 3h8l-1 6 3 4H6l3-4z"/></symbol>
@@ -156,6 +157,7 @@
       <select id="art-ver" class="chip select" aria-label="Version" hidden></select>
       <div class="seg" role="tablist"><button id="tab-prev" role="tab" type="button" aria-selected="true" title="Aperçu"><svg class="ic"><use href="#i-eye"/></svg> Aperçu</button><button id="tab-code" role="tab" type="button" aria-selected="false" title="Code"><svg class="ic"><use href="#i-code"/></svg> Code</button></div>
       <button class="icon-btn" id="art-edit" type="button" title="Modifier le contenu" aria-label="Modifier" aria-pressed="false"><svg class="ic"><use href="#i-pencil"/></svg></button>
+      <button class="icon-btn danger" id="art-run" type="button" title="Exécuter ce code dans l’application ouverte (aperçu, réservé à l’administrateur)" aria-label="Exécuter dans l’application" hidden><svg class="ic"><use href="#i-play"/></svg></button>
       <button class="icon-btn" id="art-lib" type="button" title="Enregistrer dans la bibliothèque" aria-label="Enregistrer dans la bibliothèque" hidden><svg class="ic"><use href="#i-library"/></svg></button>
       <button class="icon-btn" id="art-copy" type="button" title="Copier" aria-label="Copier"><svg class="ic"><use href="#i-copy"/></svg></button>
       <button class="icon-btn" id="art-dl" type="button" title="Télécharger" aria-label="Télécharger"><svg class="ic"><use href="#i-download"/></svg></button>
@@ -296,6 +298,7 @@
 <script src="coloration.js?v=202611231800"></script>
 <script src="calcul.js?v=202611231800"></script>
 <script src="appframe.js?v=202611191800"></script>
+<script src="charte.js?v=202611241800"></script>
 <script src="chatgdb.js?v=202611191800"></script>
 </body>
 </html>
