@@ -280,3 +280,5 @@ dialog.wide{width:min(900px,calc(100% - 32px))}.status{min-height:18px;margin:0 
 .seg button .ic{width:14px;height:14px;vertical-align:-2px;margin-right:3px}.icon-btn[aria-pressed=true]{background:var(--navy);color:#fff}.app[data-theme=dark] .icon-btn[aria-pressed=true]{background:var(--gold);color:#1a1500}
 .art-body pre.raw .tk-com{color:#6b7a8c;font-style:italic}.art-body pre.raw .tk-str{color:#0b7a3b}.art-body pre.raw .tk-num{color:#b45309}.art-body pre.raw .tk-kw{color:#7c3aed;font-weight:600}.art-body pre.raw .tk-fn{color:#0b5cad}
 .app[data-theme=dark] .art-body pre.raw .tk-com{color:#8b9bb0}.app[data-theme=dark] .art-body pre.raw .tk-str{color:#7ee0a0}.app[data-theme=dark] .art-body pre.raw .tk-num{color:#ffb86b}.app[data-theme=dark] .art-body pre.raw .tk-kw{color:#c4a5ff}.app[data-theme=dark] .art-body pre.raw .tk-fn{color:#7cc0ff}
+
+.inline-map{margin:8px 0 12px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--hover);min-height:60px;display:grid;place-items:center;padding:0}.inline-map iframe{display:block;width:100%;height:min(60vh,420px);border:0}.inline-map>button{margin:14px}

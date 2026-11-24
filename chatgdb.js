@@ -438,6 +438,17 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
       const card = el("button", { className: "afc" + (openArtId === s.id ? " on" : ""), type: "button" },
         el("span", { className: "ico", innerHTML: ic(k.ico) }), el("span", {}, el("b", { textContent: s.title }), el("small", { textContent: k.label + (vers.length > 1 ? " · version " + (idx + 1) + " sur " + vers.length : "") })), el("span", { className: "go", innerHTML: "Ouvrir" + ic("chev") }));
       card.onclick = () => openArt(conv, s.id, idx); wrap.append(card);
+      // Une carte (Cartes IGN) s'affiche aussi directement dans la réponse, en lecture seule, dès qu'elle devient visible
+      if (s.type === "app" && window.GDBApps && GDBApps.urlOf) {
+        const sp = GDBApps.parseSpec(s.content), u = sp && GDBApps.urlOf(sp);
+        if (u && /\/ScoutMap\//.test(u.pathname)) {
+          const box = el("div", { className: "inline-map" }, el("button", { className: "btn", type: "button", textContent: "Afficher la carte ici" }));
+          const montrer = () => { if (box.dataset.ok) return; box.dataset.ok = "1"; box.textContent = ""; box.append(GDBApps.makeFrame(u.href, s.title, sp.commandes)); };
+          box.firstChild.onclick = montrer;
+          if (window.IntersectionObserver) { const io = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) { io.disconnect(); montrer(); } }, { rootMargin: "100px" }); io.observe(box); }
+          wrap.append(box);
+        }
+      }
     });
     body.append(wrap);
     if (m.sources && m.sources.length) { const src = el("div", { className: "sources" }); m.sources.forEach((s, i) => src.append(el("a", { className: "src", id: "src-" + i, href: s.url, target: "_blank", rel: "noopener noreferrer", innerHTML: `<i>${i + 1}</i><span><b>${esc(s.title)}</b><small>${esc(host(s.url))}</small></span>` }))); body.append(src); }
