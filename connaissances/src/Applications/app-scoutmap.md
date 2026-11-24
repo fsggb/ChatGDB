@@ -107,3 +107,16 @@ Dans le panneau Partage, « Lancer un appel vocal » appelle les autres personne
 
 ## Préparer un jeu avec ChatGDB (distance, relief, soleil)
 Deux commandes aident à dimensionner un parcours : `route.analyse` (distance, dénivelé, durée de marche, heure d'arrivée, marge avant le coucher du soleil, alertes) et `info.sun` (lever et coucher du soleil d'un lieu et d'une date). Voir la fiche comp-grand-jeu-preparation. L'épreuve « sans carte » masque la carte sous la zone des azimuts (menu de l'outil Azimuts) ; le masque s'imprime aussi.
+
+## Où est quoi dans le dépôt (à lire avec lire_depot, dépôt ScoutMap)
+- `README.md`, `docs/ARCHITECTURE.md`, `CHANGELOG.md` : présentation, architecture, historique des versions. `CHATGDB.md` : toutes les commandes de pilotage (id, paramètres).
+- `src/app/*.js` : le moteur en 18 parties numérotées (état, fonds de carte, itinéraire, azimuts, export, menus, commandes de pilotage `16-pilotage-chatgdb.js`…). `js/app.js` est généré à partir d'elles : ne pas le lire en entier.
+- `js/game.js` (grand jeu), `js/doc.js` (impression et PDF), `js/live.js` (partage en direct), `js/geo.js` (distances, azimuts, soleil), `js/offline.js` (cartes hors connexion), `js/settings.js` (réglages).
+- `index.html`, `css/style.css` : page et styles. `docs/tutoriel/` : scénarios des vidéos.
+
+## Créer une carte sur mesure (échelle, légende, tracés de couleur)
+1. Ouvrir Cartes IGN, poser ce qu'il faut par commandes (itinéraires, GR avec info.gr / route.add_gr, éléments de jeu avec game.add), régler l'échelle (view.scale) et le fond (map.base).
+2. `embed.spec` produit une vue partielle (carte seule, tracés de couleurs différentes, légende, profil) ; la mettre dans un artefact de type « application » : la carte s'affiche dans la réponse et dans le volet, en lecture seule, avec l'échelle de la carte.
+3. Pour un document imprimé avec échelle et légende, utiliser `print.open` (Imprimer / PDF) : les feuilles sont à l'échelle choisie ; une page de légende ou de solutions se prépare dans un artefact HTML à télécharger.
+4. Pour une application vraiment nouvelle, lire le code du dépôt (fichiers ci-dessus) et s'en inspirer ; un artefact HTML est isolé (pas de réseau, pas de fond IGN) : il ne peut pas recharger les cartes, seule l'application ScoutMap le peut.
+
