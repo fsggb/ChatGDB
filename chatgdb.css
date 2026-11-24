@@ -282,3 +282,20 @@ dialog.wide{width:min(900px,calc(100% - 32px))}.status{min-height:18px;margin:0 
 .app[data-theme=dark] .art-body pre.raw .tk-com{color:#8b9bb0}.app[data-theme=dark] .art-body pre.raw .tk-str{color:#7ee0a0}.app[data-theme=dark] .art-body pre.raw .tk-num{color:#ffb86b}.app[data-theme=dark] .art-body pre.raw .tk-kw{color:#c4a5ff}.app[data-theme=dark] .art-body pre.raw .tk-fn{color:#7cc0ff}
 
 .inline-map{margin:8px 0 12px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--hover);min-height:60px;display:grid;place-items:center;padding:0}.inline-map iframe{display:block;width:100%;height:min(60vh,420px);border:0}.inline-map>button{margin:14px}
+
+/* Charte d'utilisation (première conversation) */
+#charte-overlay{position:fixed;inset:0;z-index:5000;display:grid;place-items:center;background:var(--navy);background:linear-gradient(160deg,var(--navy),var(--navy2));padding:20px}
+.charte-card{width:min(480px,100%);max-height:92vh;overflow:auto;background:var(--panel,#fff);color:var(--text,#0a0c25);border-radius:18px;padding:26px 24px 20px;box-shadow:0 24px 60px rgba(0,0,0,.35)}
+.charte-steps{display:flex;gap:6px;margin-bottom:16px}
+.charte-dot{flex:1;height:4px;border-radius:3px;background:var(--line,#e7e4dc)}
+.charte-dot.on{background:var(--gold)}.charte-dot.done{background:var(--gold-d)}
+.charte-card h2{margin:0 0 8px;font-size:19px;color:var(--navy)}
+.app[data-theme=dark] .charte-card h2{color:var(--gold)}
+.charte-txt{margin:0 0 10px;font-size:14px;line-height:1.5;color:var(--mute)}
+.charte-pts{margin:0 0 16px;padding-left:18px;font-size:13.5px;line-height:1.55}
+.charte-pts li{margin-bottom:4px}
+.charte-ck{display:flex;align-items:flex-start;gap:10px;font-size:13.5px;font-weight:650;padding:12px 14px;border:1.5px solid var(--line,#e7e4dc);border-radius:12px;cursor:pointer;margin-bottom:18px}
+.charte-ck input{margin-top:2px;width:18px;height:18px;flex:none;accent-color:var(--navy)}
+.charte-foot{display:flex;align-items:center;justify-content:space-between;gap:10px}
+
+.icon-btn.danger{color:#b42318}.icon-btn.danger:hover{background:#fdecea}
