@@ -724,6 +724,34 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
     majApercu(); setTimeout(() => ta.focus(), 0);
     return box;
   }
+  // Demande d'autorisation avant d'exécuter du code que l'IA propose elle-même (outil executer_dans_application, admin seulement) :
+  // une vraie fenêtre montre le code en entier (coloré) ; rien ne s'exécute sans un clic explicite sur « Autoriser ».
+  function demanderExecution(e) {
+    return new Promise(res => {
+      const code = String(e && e.code || "").slice(0, 20000), raison = String(e && e.raison || "").slice(0, 300);
+      if (!code.trim()) return res("Refusé : aucun code reçu.");
+      const dlg = el("dialog", { className: "dlg-simple wide" });
+      const pre = el("pre", { className: "raw" }); pre.innerHTML = window.GDBColor ? window.GDBColor.coloriser(code, "code", "javascript") : esc(code);
+      dlg.append(
+        el("h2", { textContent: "ChatGDB veut exécuter du code" }),
+        el("p", { className: "muted", textContent: raison || "Aucune raison donnée." }),
+        el("div", { style: "max-height:50vh;overflow:auto;border:1px solid var(--line);border-radius:10px;margin:10px 0" }, pre),
+        el("div", { className: "dlg-actions" },
+          el("button", { className: "btn", type: "button", textContent: "Refuser", onclick: () => { dlg.close("non"); } }),
+          el("button", { className: "btn danger", type: "button", textContent: "Autoriser l’exécution", onclick: () => { dlg.close("oui"); } }))
+      );
+      document.body.append(dlg);
+      dlg.addEventListener("close", async () => {
+        const autorise = dlg.returnValue === "oui"; dlg.remove();
+        if (!autorise) return res("Refusé par l’administrateur : ne propose pas à nouveau le même code sans que l’administrateur le redemande.");
+        try {
+          const r = await GA.injecter(code);
+          res(((r.out ? "Autorisé — sortie :\n" + r.out : "Autorisé — aucune sortie console.") + (r.valeur !== undefined ? "\nValeur renvoyée : " + r.valeur : "")).slice(0, 4000));
+        } catch (err) { res("Autorisé, mais erreur à l’exécution : " + (err && err.message || err)); }
+      });
+      dlg.showModal();
+    });
+  }
   $("tab-prev").onclick = () => { tab = "prev"; renderArt(); }; $("tab-code").onclick = () => { tab = "code"; renderArt(); }; $("art-edit").onclick = () => { tab = tab === "edit" ? "code" : "edit"; renderArt(); };
   // Exécution dans l'application ouverte : réservé à l'administrateur, toujours sur un clic humain (jamais déclenché seul par l'IA).
   // Aperçu uniquement : le résultat (sortie console, valeur renvoyée, ou erreur) s'affiche ici, rien n'est envoyé automatiquement à ChatGDB.
@@ -928,7 +956,12 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
     contenu: { type: "string", description: "Markdown court : sections « ## », listes courtes, 40 lignes au plus ; sans ligne « --- »." } }, required: ["id", "titre", "theme", "resume", "mots_cles", "contenu"] } };
   const CONSIGNE_ARTEFACTS = "ARTEFACTS (pages HTML, animations, mises en page) : avant d'en créer un, lis avec lire_fiche les fiches « artefacts-design-web », « artefacts-animation-web » et « artefacts-checklist » de la base de connaissances et applique-les (règles définies, pas inventées) ; avant de livrer, passe la liste de contrôle.";
   const CONSIGNE_CALCUL = "CALCUL EXACT : pour tout ce qui demande de la rigueur (chiffrer ou déchiffrer un message, compter, convertir, calculer une distance, une pente, une durée, une heure), n'écris JAMAIS le résultat de tête : écris un petit programme et exécute-le avec l'outil executer_code, puis vérifie (déchiffre ce que tu viens de chiffrer). Donne ensuite le résultat et la méthode.";
-  const CONSIGNE_INJECTION = "OUTIL SUR MESURE DANS UNE APPLICATION (administrateur, aperçu) : quand l'administrateur veut une sortie que les commandes de l'application ne proposent pas directement (par exemple une carte ScoutMap avec échelle, légende et mise en page précises), tu peux écrire un artefact de code (JavaScript) qui s'appuie sur ce que cette application expose déjà dans sa page (son window.<app>, le DOM, Leaflet pour ScoutMap…) pour composer la sortie voulue. Explique dans ta réponse que ce code s'exécute dans l'application déjà ouverte via le bouton ▶ (lecture) de la vue Code de l'artefact ; TOI tu ne l'exécutes jamais : seul un clic de l'administrateur le lance, après relecture. N'utilise ceci que pour de l'affichage ou de la lecture (jamais pour supprimer, envoyer ou publier quelque chose) et dis clairement à l'administrateur ce que le code va faire avant qu'il clique.";
+  // Réservé à l'administrateur : exécute du code dans la vraie page de l'application déjà ouverte (console, window.scoutmap…).
+  // Claude peut l'appeler lui-même, mais RIEN ne s'exécute avant que l'administrateur l'autorise explicitement (fenêtre de confirmation
+  // avec le code affiché en entier) : un appel refusé renvoie un résultat d'outil normal ("refusé"), pas une erreur.
+  const OUTIL_EXEC = { name: "executer_dans_application", description: "Exécute du code JavaScript dans l'application déjà ouverte (son window, sa console, par exemple window.scoutmap), pour construire une sortie sur mesure que les commandes de l'application ne proposent pas (ex. une carte avec une mise en page précise). Réservé à l'administrateur : une fenêtre affiche le code en entier et demande son autorisation avant toute exécution ; si elle est refusée, le résultat te le dit et tu t'arrêtes là (ne retente pas la même chose sans la changer).",
+    input_schema: { type: "object", properties: { code: { type: "string", description: "Code JavaScript complet à exécuter dans la page. console.log() pour afficher, return pour une valeur." }, raison: { type: "string", description: "Une phrase : ce que ce code va faire, pour l'autorisation." } }, required: ["code", "raison"] } };
+  const CONSIGNE_INJECTION = "OUTIL SUR MESURE DANS UNE APPLICATION (administrateur) : quand l'administrateur veut une sortie que les commandes de l'application ne proposent pas directement (par exemple une carte ScoutMap avec échelle, légende et mise en page précises), écris le code JavaScript qui s'appuie sur ce que cette application expose déjà dans sa page (son window.<app>, le DOM, Leaflet pour ScoutMap…) pour composer la sortie voulue, puis appelle l'outil executer_dans_application avec ce code et une « raison » d'une phrase : une fenêtre montre le code en entier à l'administrateur et demande son autorisation avant toute exécution. Si elle est refusée, le résultat te le dit : n'insiste pas, propose autre chose ou demande ce qu'il veut changer. N'utilise ceci que pour de l'affichage ou de la lecture (jamais pour supprimer, envoyer ou publier quelque chose). Tu peux aussi donner ce même code comme artefact de code : l'administrateur peut alors le relire et le relancer lui-même plus tard avec le bouton ▶ de la vue Code.";
   const CONSIGNE_FICHES = "FICHES DE CONNAISSANCES (administrateur) : tu peux proposer une fiche avec l'outil proposer_fiche, mais seulement si TOUTES ces conditions sont réunies : le savoir est utile à d'autres chefs, durable, général et fiable (vérifié, pas une supposition) ; il n'est pas déjà dans la base (cherche d'abord avec chercher_connaissances) ; il ne contient AUCUNE donnée personnelle ou confidentielle (noms, adresses, contacts, jeunes, santé, mots de passe, détails d'une unité précise). Une fiche = un sujet, courte, listes sèches, titre précis. Au plus 2 propositions par conversation, jamais pour une simple réponse ; dis à l'administrateur en une phrase ce que tu as proposé. Ce n'est qu'un brouillon : rien n'est publié sans sa validation. Ne propose jamais de modifier ou supprimer une fiche existante.";
   const BASE_C = new URL("connaissances/", location.href);
   let baseIdx = null;
@@ -1025,6 +1058,7 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
       // Aucun plafond d'étapes : l'outil « application » est décrit par la page, et les outils web (recherche, lecture de pages) n'ont plus de nombre maximal d'utilisations
       const outils = conf.outils.map(o => o.name === "application" && GA.schema ? GA.schema(apps) : /^web_(search|fetch)_/.test(o.type || "") ? (({ max_uses, ...reste }) => reste)(o) : o);
       if (estAdmin() && conf.relais && conf.jeton) outils.push(OUTIL_FICHE);
+      if (estAdmin() && window.GDBApps && GA.hasFrame && GA.hasFrame() && GA.injecter) outils.push(OUTIL_EXEC);
       if (labo()) outils.push(OUTIL_LABO);
       if (window.GDBCalcul) outils.push(window.GDBCalcul.OUTIL);
       const hist = await history(), messages = hist.map(m => ({ role: m.role, content: contenuAnthropic(m) }));
@@ -1108,6 +1142,10 @@ td[contenteditable]{background:#fffdf4}input{width:18px;height:18px;accent-color
             pas({ k: "outil", t: "Calcul exact (" + (e.langage || "javascript") + ")" });
             journal.push("executer_code " + String(e.code || "").slice(0, 60).replace(/\s+/g, " "));
             resultats.push({ type: "tool_result", tool_use_id: b.id, content: await window.GDBCalcul.executer(e) });
+          } else if (b.name === "executer_dans_application") {
+            pas({ k: "outil", t: "Demande d'exécution : " + String(e.raison || "").slice(0, 70) });
+            journal.push("executer_dans_application " + String(e.raison || "").slice(0, 60).replace(/\s+/g, " "));
+            resultats.push({ type: "tool_result", tool_use_id: b.id, content: await demanderExecution(e) });
           } else if (b.name === "laboratoire") {
             pas({ k: "outil", t: "Laboratoire : " + (e.action || "") + (e.q ? " « " + String(e.q).slice(0, 60) + " »" : "") });
             journal.push("laboratoire " + JSON.stringify(e).slice(0, 100));
