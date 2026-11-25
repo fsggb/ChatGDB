@@ -14,7 +14,9 @@
   const norm = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "");
   const registry = () => (window.SCOUTHUB_APPS || []).map(a => {
     let u; try { u = new URL(a.url, BASE); } catch { return null; }
-    const dossier = (/\/ScoutHub\/([^/]+)\//.exec(u.pathname) || [])[1] || "";
+    // Le dossier (nom technique) est le premier élément du chemin : « /ScoutHub/ScoutMap/ » (suite Craft, encore assemblée
+    // par ScoutHub) ou directement « /ScoutMap/ » (application qui se publie désormais seule, même domaine).
+    const dossier = (/^\/(?:ScoutHub\/)?([^/]+)\//.exec(u.pathname) || [])[1] || "";
     return u.origin === location.origin && !BLOCK.test(a.name) && u.pathname.indexOf("/ChatGDB/") < 0 ? { name: a.name, dossier, url: u } : null;
   }).filter(Boolean);
   // Autres noms que l'IA peut employer pour une application (le portail les affiche sous un nom, le dossier porte l'autre)
