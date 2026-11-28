@@ -4,3 +4,4 @@ connaissances/index.json
 connaissances/fiches/
 build/
 cloudflare/src/files.json
+.wrangler/
