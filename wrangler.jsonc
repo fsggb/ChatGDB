@@ -1,0 +1,11 @@
+{
+  // Worker de l'outil ChatGDB (un Worker par outil). Les fichiers du site (dossier « build », identique à la publication
+  // GitHub Pages) y sont embarqués ; l'intranet (Worker « intranet ») les sert sous /ChatGDB/ aux seuls membres connectés.
+  // Déploiement automatique : .github/workflows/cloudflare.yml.
+  "name": "chatgdb",
+  "main": "cloudflare/src/index.js",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": { "enabled": true }
+}

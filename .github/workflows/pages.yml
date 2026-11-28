@@ -33,7 +33,7 @@ jobs:
           node-version: 22
       # Base de connaissances : fiches Markdown (connaissances/src) -> carte index.json + fiches/*.json
       - run: node scripts/connaissances.mjs --verifier
-      - run: mkdir build && tar -c --exclude='./.git' --exclude='./.github' --exclude='./scripts' --exclude='./docs' --exclude='./connaissances/src' --exclude='*.md' . | tar -x -C build
+      - run: mkdir build && tar -c --exclude='./.git' --exclude='./.github' --exclude='./scripts' --exclude='./docs' --exclude='./connaissances/src' --exclude='./cloudflare' --exclude='./wrangler.jsonc' --exclude='./build' --exclude='*.md' . | tar -x -C build
       - uses: actions/upload-pages-artifact@v3
         with:
           path: build

@@ -1,0 +1,36 @@
+name: Déployer ChatGDB sur Cloudflare
+
+# Le Worker « chatgdb » contient exactement les fichiers publiés sur GitHub Pages ; l'intranet le sert sous /ChatGDB/
+# aux membres connectés. Prérequis : secrets GitHub CLOUDFLARE_API_TOKEN et CLOUDFLARE_ACCOUNT_ID.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Vérifier la configuration
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::Secrets CLOUDFLARE_API_TOKEN et CLOUDFLARE_ACCOUNT_ID absents (Réglages du dépôt > Secrets and variables > Actions)."; exit 1
+          fi
+      - run: node scripts/connaissances.mjs --verifier
+      - run: mkdir build && tar -c --exclude='./.git' --exclude='./.github' --exclude='./scripts' --exclude='./docs' --exclude='./connaissances/src' --exclude='./build' --exclude='./cloudflare' --exclude='./wrangler.jsonc' --exclude='*.md' . | tar -x -C build
+      - run: node cloudflare/construire.mjs
+      - run: npx --yes wrangler@4 deploy
